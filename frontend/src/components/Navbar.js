@@ -23,47 +23,64 @@ const Navbar = ({ user, setUser }) => {
 
   return (
     <nav className="navbar">
-      <div className="navbar-logo">
-        <img src="/logo.png" alt="Stolen Bike Predictor Logo" />
+      <div className="navbar-brand">
+        <div className="navbar-logo">
+          <img src="/logo.png" alt="Bike Recovery AI Logo" />
+        </div>
+        <div className="navbar-title">
+          <h1>🚴 Bike Recovery AI</h1>
+          <span className="navbar-subtitle">Smart Theft Prediction</span>
+        </div>
       </div>
-      <div className="navbar-title">
-        <h1>Stolen Bike Predictor</h1>
+      
+      <div className="navbar-center">
+        <div className="navbar-nav">
+          <Link to="/" className="nav-link">
+            <span className="nav-icon">🏠</span>
+            Home
+          </Link>
+          
+          {user && user.role !== 'admin' && (
+            <>
+              <Link to="/predict" className="nav-link">
+                <span className="nav-icon">🔮</span>
+                Bike Prediction
+              </Link>
+              <Link to="/map" className="nav-link">
+                <span className="nav-icon">🗺️</span>
+                Theft Map
+              </Link>
+            </>
+          )}
+        </div>
       </div>
-      <div className="navbar-links">
-        <Link to="/">Home</Link>
-        
+
+      <div className="navbar-user">
         {user ? (
-          // Authenticated user links
-          <>
-            {user.role !== 'admin' && (
-              <>
-                <Link to="/predict">Bike Prediction</Link>
-                <Link to="/map">Theft Map</Link>
-              </>
-            )}
-            <span style={{ color: '#007bff', fontWeight: 'bold', marginRight: '10px' }}>
-              Welcome, {user.name || user.email}
-            </span>
+          <div className="user-section">
+            <div className="user-info">
+              <span className="user-greeting">Welcome,</span>
+              <span className="user-name">{user.name || user.email}</span>
+            </div>
             <button 
               onClick={handleLogout}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: '#007bff',
-                cursor: 'pointer',
-                textDecoration: 'underline',
-                fontSize: 'inherit'
-              }}
+              className="logout-btn"
             >
+              <span className="logout-icon">🚪</span>
               Logout
             </button>
-          </>
+          </div>
         ) : (
-          // Non-authenticated user links
-          <>
-            <Link to="/login">Login</Link>
-            <Link to="/register">Register</Link>
-          </>
+          <div className="auth-links">
+            <Link to="/login" className="auth-link login-link">
+              <span className="auth-icon">🔐</span>
+              Login
+            </Link>
+            <Link to="/register" className="auth-link register-link">
+              <span className="auth-icon">📝</span>
+              Register
+            </Link>
+          </div>
         )}
       </div>
     </nav>
