@@ -30,7 +30,12 @@ const Login = ({ setUser }) => {
         localStorage.setItem('user', JSON.stringify(data.user));
         // Update the user state in App.js
         setUser(data.user);
-        navigate('/predict');
+        // Route based on user role
+        if (data.user.role === 'admin') {
+          navigate('/');  // Admin users go to home page
+        } else {
+          navigate('/predict');  // Regular users go to prediction page
+        }
       } else {
         setError(data.error || 'Login failed');
       }
