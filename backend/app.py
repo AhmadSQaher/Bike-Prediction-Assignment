@@ -19,6 +19,8 @@ matplotlib.use('Agg')  # Use non-interactive backend
 import matplotlib.pyplot as plt
 import io
 import base64
+from pymongo import MongoClient
+from pymongo.errors import ConnectionFailure
 
 # Define model file paths for v1 and v2
 MODEL_PATH_V1 = os.path.join('models', 'stolen_bike_recovery_prediction_model_v1.pkl')
@@ -28,7 +30,27 @@ app = Flask(__name__)
 app.secret_key = 'your-secret-key-change-this-in-production'  # Change in production
 CORS(app, supports_credentials=True)  # Enable CORS for frontend with credentials
 
-# In-memory storage for demo (use database in production)
+# MongoDB configuration
+MONGO_URI = "mongodb+srv://sqaher:LR3iKYVjY3yQqdPt@centennialcollegecluste.rkaeskw.mongodb.net/"
+DB_NAME = "bike_recovery_ai"
+
+# Initialize MongoDB connection
+try:
+    client = MongoClient(MONGO_URI)
+    # Test the connection
+    client.admin.command('ismaster')
+    db = client[DB_NAME]
+    users_collection = db.users
+    tokens_collection = db.password_reset_tokens
+    print("Connected to MongoDB successfully!")
+except ConnectionFailure:
+    print("Failed to connect to MongoDB. Falling back to in-memory storage.")
+    client = None
+    db = None
+    users_collection = None
+    tokens_collection = None
+
+# Fallback to in-memory storage if MongoDB is not available
 users_db = {}
 password_reset_tokens = {}
 
@@ -38,6 +60,142 @@ EMAIL_PORT = 587
 EMAIL_HOST_USER = '54m3r05@gmail.com' 
 EMAIL_HOST_PASSWORD = 'neua qsrk dwda hobq' 
 EMAIL_USE_TLS = True
+
+# MongoDB helper functions
+def get_user(email):
+    """Get user from MongoDB or fallback storage"""
+    if users_collection is not None:
+        try:
+            user = users_collection.find_one({"email": email})
+            return user
+        except Exception as e:
+            print(f"MongoDB error getting user: {e}")
+            return users_db.get(email)
+    else:
+        return users_db.get(email)
+
+def create_user(email, password, name="", role="user"):
+    """Create user in MongoDB or fallback storage"""
+    user_data = {
+        'email': email,
+        'password': generate_password_hash(password),
+        'name': name,
+        'role': role,
+        'created_at': datetime.now().isoformat()
+    }
+    
+    if users_collection is not None:
+        try:
+            users_collection.insert_one(user_data)
+            return True
+        except Exception as e:
+            print(f"MongoDB error creating user: {e}")
+            users_db[email] = user_data
+            return True
+    else:
+        users_db[email] = user_data
+        return True
+
+def update_user(email, updates):
+    """Update user in MongoDB or fallback storage"""
+    if users_collection is not None:
+        try:
+            users_collection.update_one({"email": email}, {"$set": updates})
+            return True
+        except Exception as e:
+            print(f"MongoDB error updating user: {e}")
+            if email in users_db:
+                users_db[email].update(updates)
+            return True
+    else:
+        if email in users_db:
+            users_db[email].update(updates)
+        return True
+
+def delete_user(email):
+    """Delete user from MongoDB or fallback storage"""
+    if users_collection is not None:
+        try:
+            users_collection.delete_one({"email": email})
+            return True
+        except Exception as e:
+            print(f"MongoDB error deleting user: {e}")
+            if email in users_db:
+                del users_db[email]
+            return True
+    else:
+        if email in users_db:
+            del users_db[email]
+        return True
+
+def get_all_users():
+    """Get all users from MongoDB or fallback storage"""
+    if users_collection is not None:
+        try:
+            users = list(users_collection.find({}, {"password": 0}))  # Exclude password field
+            # Convert MongoDB ObjectId to string for JSON serialization
+            for user in users:
+                if '_id' in user:
+                    user['_id'] = str(user['_id'])
+            return users
+        except Exception as e:
+            print(f"MongoDB error getting all users: {e}")
+            return [{"email": email, **{k: v for k, v in user_data.items() if k != 'password'}} 
+                   for email, user_data in users_db.items()]
+    else:
+        return [{"email": email, **{k: v for k, v in user_data.items() if k != 'password'}} 
+               for email, user_data in users_db.items()]
+
+def store_reset_token(token, email, expires):
+    """Store password reset token in MongoDB or fallback storage"""
+    token_data = {
+        'token': token,
+        'email': email,
+        'expires': expires.isoformat()
+    }
+    
+    if tokens_collection is not None:
+        try:
+            tokens_collection.insert_one(token_data)
+            return True
+        except Exception as e:
+            print(f"MongoDB error storing token: {e}")
+            password_reset_tokens[token] = {'email': email, 'expires': expires}
+            return True
+    else:
+        password_reset_tokens[token] = {'email': email, 'expires': expires}
+        return True
+
+def get_reset_token(token):
+    """Get password reset token from MongoDB or fallback storage"""
+    if tokens_collection is not None:
+        try:
+            token_data = tokens_collection.find_one({"token": token})
+            if token_data:
+                expires = datetime.fromisoformat(token_data['expires'])
+                return {'email': token_data['email'], 'expires': expires}
+            return None
+        except Exception as e:
+            print(f"MongoDB error getting token: {e}")
+            return password_reset_tokens.get(token)
+    else:
+        return password_reset_tokens.get(token)
+
+def delete_reset_token(token):
+    """Delete password reset token from MongoDB or fallback storage"""
+    if tokens_collection is not None:
+        try:
+            tokens_collection.delete_one({"token": token})
+            return True
+        except Exception as e:
+            print(f"MongoDB error deleting token: {e}")
+            if token in password_reset_tokens:
+                del password_reset_tokens[token]
+            return True
+    else:
+        if token in password_reset_tokens:
+            del password_reset_tokens[token]
+        return True
 
 def send_reset_email(email, reset_token, user_name="User"):
     """
@@ -248,22 +406,19 @@ def register():
         if role not in ['user', 'admin']:
             return jsonify({"error": "Invalid role. Must be 'user' or 'admin'"}), 400
         
-        if email in users_db:
+        # Check if user already exists
+        existing_user = get_user(email)
+        if existing_user:
             return jsonify({"error": "User already exists"}), 400
         
-        # Hash password and store user
-        hashed_password = generate_password_hash(password)
-        users_db[email] = {
-            'password': hashed_password,
-            'name': name,
-            'role': role,
-            'created_at': datetime.now().isoformat()
-        }
-        
-        return jsonify({
-            "message": "User registered successfully",
-            "user": {"email": email, "name": name, "role": role}
-        }), 201
+        # Create user
+        if create_user(email, password, name, role):
+            return jsonify({
+                "message": "User registered successfully",
+                "user": {"email": email, "name": name, "role": role}
+            }), 201
+        else:
+            return jsonify({"error": "Failed to create user"}), 500
         
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -278,7 +433,7 @@ def login():
         if not email or not password:
             return jsonify({"error": "Email and password are required"}), 400
         
-        user = users_db.get(email)
+        user = get_user(email)
         if not user or not check_password_hash(user['password'], password):
             return jsonify({"error": "Invalid credentials"}), 401
         
@@ -309,7 +464,7 @@ def get_current_user():
         return jsonify({"error": "Not authenticated"}), 401
     
     user_email = session['user_email']
-    user = users_db.get(user_email)
+    user = get_user(user_email)
     if not user:
         return jsonify({"error": "User not found"}), 404
     
@@ -329,7 +484,8 @@ def forgot_password():
             return jsonify({"error": "Email is required"}), 400
         
         # Check if email exists in our database
-        if email not in users_db:
+        user = get_user(email)
+        if not user:
             # Log for debugging (email doesn't exist)
             print(f"Password reset requested for non-existent email: {email}")
             # Return a more helpful message for non-registered emails
@@ -339,15 +495,14 @@ def forgot_password():
                 "debug_info": "Email not found in database" if app.debug else None
             }), 404
         
-        user = users_db[email]
         print(f"Password reset requested for existing user: {email}")
         
         # Generate reset token
         reset_token = secrets.token_urlsafe(32)
-        password_reset_tokens[reset_token] = {
-            'email': email,
-            'expires': datetime.now() + timedelta(hours=1)
-        }
+        expires = datetime.now() + timedelta(hours=1)
+        
+        # Store reset token
+        store_reset_token(reset_token, email, expires)
         
         # Send reset email
         email_sent = send_reset_email(email, reset_token, user.get('name', 'User'))
@@ -381,16 +536,17 @@ def reset_password():
         if not token or not new_password:
             return jsonify({"error": "Token and new password are required"}), 400
         
-        token_data = password_reset_tokens.get(token)
+        token_data = get_reset_token(token)
         if not token_data or datetime.now() > token_data['expires']:
             return jsonify({"error": "Invalid or expired token"}), 400
         
         # Update password
         email = token_data['email']
-        users_db[email]['password'] = generate_password_hash(new_password)
+        hashed_password = generate_password_hash(new_password)
+        update_user(email, {'password': hashed_password})
         
         # Remove used token
-        del password_reset_tokens[token]
+        delete_reset_token(token)
         
         return jsonify({"message": "Password reset successful"}), 200
         
@@ -399,7 +555,7 @@ def reset_password():
 
 # Admin Routes
 @app.route("/api/admin/users", methods=["GET"])
-def get_all_users():
+def get_all_users_endpoint():
     """Get all registered users - Admin only"""
     try:
         # Check authentication and admin role
@@ -409,15 +565,8 @@ def get_all_users():
         if session.get('user_role') != 'admin':
             return jsonify({"error": "Admin access required"}), 403
         
-        # Return user list (excluding passwords)
-        users_list = []
-        for email, user_data in users_db.items():
-            users_list.append({
-                "email": email,
-                "name": user_data['name'],
-                "role": user_data['role'],
-                "created_at": user_data['created_at']
-            })
+        # Get user list (excluding passwords)
+        users_list = get_all_users()
         
         return jsonify({
             "users": users_list,
@@ -428,7 +577,7 @@ def get_all_users():
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/admin/users/<email>", methods=["PUT"])
-def update_user(email):
+def update_user_endpoint(email):
     """Update a user - Admin only"""
     try:
         # Check authentication and admin role
@@ -439,29 +588,37 @@ def update_user(email):
             return jsonify({"error": "Admin access required"}), 403
         
         # Check if user exists
-        if email not in users_db:
+        user = get_user(email)
+        if not user:
             return jsonify({"error": "User not found"}), 404
         
         # Prevent admin from modifying other admin accounts
-        if users_db[email]['role'] == 'admin':
+        if user['role'] == 'admin':
             return jsonify({"error": "Cannot modify admin users"}), 403
         
         data = request.get_json()
         name = data.get('name')
         new_password = data.get('password')
         
+        updates = {}
         if name is not None:
-            users_db[email]['name'] = name
+            updates['name'] = name
         
         if new_password:
-            users_db[email]['password'] = generate_password_hash(new_password)
+            updates['password'] = generate_password_hash(new_password)
+        
+        # Update user
+        update_user(email, updates)
+        
+        # Get updated user data
+        updated_user = get_user(email)
         
         return jsonify({
             "message": "User updated successfully",
             "user": {
                 "email": email,
-                "name": users_db[email]['name'],
-                "role": users_db[email]['role']
+                "name": updated_user['name'],
+                "role": updated_user['role']
             }
         }), 200
         
@@ -469,7 +626,7 @@ def update_user(email):
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/admin/users/<email>", methods=["DELETE"])
-def delete_user(email):
+def delete_user_endpoint(email):
     """Delete a user - Admin only"""
     try:
         # Check authentication and admin role
@@ -480,18 +637,19 @@ def delete_user(email):
             return jsonify({"error": "Admin access required"}), 403
         
         # Check if user exists
-        if email not in users_db:
+        user = get_user(email)
+        if not user:
             return jsonify({"error": "User not found"}), 404
         
         # Prevent admin from deleting other admin accounts or themselves
-        if users_db[email]['role'] == 'admin':
+        if user['role'] == 'admin':
             return jsonify({"error": "Cannot delete admin users"}), 403
         
         if email == session['user_email']:
             return jsonify({"error": "Cannot delete your own account"}), 403
         
         # Delete the user
-        del users_db[email]
+        delete_user(email)
         
         return jsonify({"message": "User deleted successfully"}), 200
         
@@ -499,7 +657,7 @@ def delete_user(email):
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/admin/users", methods=["POST"])
-def create_user():
+def create_user_endpoint():
     """Create a new user - Admin only"""
     try:
         # Check authentication and admin role
@@ -517,22 +675,19 @@ def create_user():
         if not email or not password:
             return jsonify({"error": "Email and password are required"}), 400
         
-        if email in users_db:
+        # Check if user already exists
+        existing_user = get_user(email)
+        if existing_user:
             return jsonify({"error": "User already exists"}), 400
         
         # Create user with 'user' role (admin can only create regular users)
-        hashed_password = generate_password_hash(password)
-        users_db[email] = {
-            'password': hashed_password,
-            'name': name,
-            'role': 'user',
-            'created_at': datetime.now().isoformat()
-        }
-        
-        return jsonify({
-            "message": "User created successfully",
-            "user": {"email": email, "name": name, "role": "user"}
-        }), 201
+        if create_user(email, password, name, 'user'):
+            return jsonify({
+                "message": "User created successfully",
+                "user": {"email": email, "name": name, "role": "user"}
+            }), 201
+        else:
+            return jsonify({"error": "Failed to create user"}), 500
         
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -765,7 +920,8 @@ def send_prediction_email():
             return jsonify({"error": "Prediction data is required"}), 400
         
         user_email = session['user_email']
-        user_name = users_db.get(user_email, {}).get('name', 'User')
+        user = get_user(user_email)
+        user_name = user.get('name', 'User') if user else 'User'
         
         # Generate email content based on format
         if email_format == 'graph':

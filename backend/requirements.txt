@@ -10,3 +10,4 @@ matplotlib==3.6.2
 seaborn==0.12.1
 imbalanced-learn==0.11.0
 werkzeug<2.3
+pymongo==4.6.1
