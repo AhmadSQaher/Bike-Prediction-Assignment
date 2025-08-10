@@ -1,8 +1,26 @@
 // src/components/Navbar.js
 import React from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 
-const Navbar = () => {
+const Navbar = ({ user, setUser }) => {
+  const navigate = useNavigate();
+
+  const handleLogout = async () => {
+    try {
+      await fetch('http://localhost:5000/api/logout', {
+        method: 'POST',
+        credentials: 'include'
+      });
+    } catch (error) {
+      console.error('Logout error:', error);
+    } finally {
+      // Clear local storage and update state
+      localStorage.removeItem('user');
+      setUser(null);
+      navigate('/');
+    }
+  };
+
   return (
     <nav className="navbar">
       <div className="navbar-logo">
@@ -13,9 +31,40 @@ const Navbar = () => {
       </div>
       <div className="navbar-links">
         <Link to="/">Home</Link>
-        <Link to="/predict">Predict</Link>
-        <Link to="/login">Login</Link>
-        <Link to="/register">Register</Link>
+        
+        {user ? (
+          // Authenticated user links
+          <>
+            {user.role !== 'admin' && (
+              <>
+                <Link to="/predict">Bike Prediction</Link>
+                <Link to="/map">Theft Map</Link>
+              </>
+            )}
+            <span style={{ color: '#007bff', fontWeight: 'bold', marginRight: '10px' }}>
+              Welcome, {user.name || user.email}
+            </span>
+            <button 
+              onClick={handleLogout}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: '#007bff',
+                cursor: 'pointer',
+                textDecoration: 'underline',
+                fontSize: 'inherit'
+              }}
+            >
+              Logout
+            </button>
+          </>
+        ) : (
+          // Non-authenticated user links
+          <>
+            <Link to="/login">Login</Link>
+            <Link to="/register">Register</Link>
+          </>
+        )}
       </div>
     </nav>
   );

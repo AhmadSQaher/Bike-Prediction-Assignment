@@ -143,9 +143,24 @@ const PredictionForm = ({ setResponse }) => {
       const res = await fetch(`http://localhost:5000/predict/${modelVersion}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', // Include credentials for authentication
         body: JSON.stringify(payload)
       });
       const data = await res.json();
+      
+      if (res.status === 401) {
+        // User not authenticated
+        setResponse({ error: 'Please log in to make predictions.' });
+        navigate('/login');
+        return;
+      }
+      
+      if (res.status === 403) {
+        // Admin users forbidden
+        setResponse({ error: 'Admin users cannot generate predictions.' });
+        return;
+      }
+      
       setResponse(data);
       navigate('/result');
     } catch (error) {
@@ -209,6 +224,55 @@ const PredictionForm = ({ setResponse }) => {
           Model v2
         </label>
       </div>
+      
+      {/* Tips Section */}
+      <div className="tips-section" style={{
+        backgroundColor: '#f8f9fa',
+        border: '1px solid #dee2e6',
+        borderRadius: '8px',
+        padding: '20px',
+        marginBottom: '25px'
+      }}>
+        <h3 style={{ marginTop: '0', color: '#495057' }}>💡 Tips for Filling Out the Form</h3>
+        <p style={{ marginBottom: '15px', color: '#6c757d' }}>
+          Please fill out the fields as instructed for the selected model version.
+        </p>
+        
+        {modelVersion === "v1" ? (
+          <div>
+            <h4 style={{ color: '#007bff', marginBottom: '10px' }}>For Model v1 (Class Weighting x Random Forest):</h4>
+            <ul style={{ paddingLeft: '20px', color: '#495057' }}>
+              <li><strong>PRIMARY OFFENCE:</strong> Select the offence code (e.g., robbery, burglary) from the dropdown.</li>
+              <li><strong>BIKE MAKE:</strong> Select the bike manufacturer from the dropdown.</li>
+              <li><strong>NEIGHBOURHOOD 158:</strong> Choose the neighbourhood code 158 from the dropdown.</li>
+              <li><strong>NEIGHBOURHOOD 140:</strong> Choose the neighbourhood code 140 from the dropdown.</li>
+              <li><strong>BIKE COST:</strong> Enter the bike's cost (e.g., 200).</li>
+              <li><strong>LAT_WGS84:</strong> Enter the latitude coordinate (e.g., 43.6532).</li>
+              <li><strong>OCC_DOY:</strong> Enter the day-of-year the theft occurred (e.g., 200).</li>
+              <li><strong>REPORT YEAR:</strong> Enter the year the report was filed (e.g., 2018).</li>
+              <li><strong>REPORT DAY:</strong> Enter the day of the month of the report (e.g., 15).</li>
+              <li><strong>OCC DAY:</strong> Enter the day of the month the theft occurred (e.g., 10).</li>
+            </ul>
+          </div>
+        ) : (
+          <div>
+            <h4 style={{ color: '#28a745', marginBottom: '10px' }}>For Model v2 (SMOTETomek x XGBoost):</h4>
+            <ul style={{ paddingLeft: '20px', color: '#495057' }}>
+              <li><strong>PRIMARY OFFENCE:</strong> Select the offence code from the dropdown.</li>
+              <li><strong>DIVISION:</strong> Select the police division from the dropdown.</li>
+              <li><strong>PREMISES TYPE:</strong> Choose the type of premises where the theft occurred.</li>
+              <li><strong>BIKE TYPE:</strong> Select the bike type from the dropdown.</li>
+              <li><strong>BIKE COLOUR:</strong> Choose the bike colour from the dropdown.</li>
+              <li><strong>NEIGHBOURHOOD 140:</strong> Select the neighbourhood code 140 from the dropdown.</li>
+              <li><strong>OCC DOW:</strong> Enter the day of the week when the theft occurred (0 for Sunday, 6 for Saturday).</li>
+              <li><strong>REPORT YEAR:</strong> Enter the year the report was filed (e.g., 2018).</li>
+              <li><strong>BIKE SPEED:</strong> Enter the bike's speed (e.g., 6).</li>
+              <li><strong>BIKE COST:</strong> Enter the bike's cost (e.g., 500).</li>
+            </ul>
+          </div>
+        )}
+      </div>
+      
       <form onSubmit={handleSubmit}>
         {modelVersion === "v1" ? (
           <div className="form-grid">
