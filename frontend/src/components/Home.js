@@ -70,12 +70,50 @@ const Home = () => {
           ) : (
             <div style={{
               background: 'rgba(255,255,255,0.1)',
-              padding: '20px',
-              borderRadius: '10px',
+              padding: '30px',
+              borderRadius: '15px',
               border: '1px solid rgba(255,255,255,0.2)'
             }}>
-              <h3>👨‍💼 Admin Dashboard</h3>
-              <p>Welcome, admin! You have system administration access.</p>
+              <h3 style={{ marginBottom: '15px', fontSize: '24px' }}>👨‍💼 Admin Dashboard</h3>
+              <p style={{ marginBottom: '25px', fontSize: '16px', opacity: '0.9' }}>
+                Welcome, admin! Manage the system and data from your dashboard.
+              </p>
+              <div style={{ display: 'flex', gap: '15px', justifyContent: 'center', flexWrap: 'wrap' }}>
+                <Link 
+                  to="/admin/users" 
+                  style={{
+                    background: 'rgba(255,255,255,0.2)',
+                    color: 'white',
+                    padding: '12px 25px',
+                    borderRadius: '25px',
+                    textDecoration: 'none',
+                    fontSize: '14px',
+                    fontWeight: 'bold',
+                    transition: 'all 0.3s ease',
+                    display: 'inline-block',
+                    border: '1px solid rgba(255,255,255,0.3)'
+                  }}
+                >
+                  👥 Manage Users
+                </Link>
+                <Link 
+                  to="/admin/data" 
+                  style={{
+                    background: 'rgba(255,255,255,0.2)',
+                    color: 'white',
+                    padding: '12px 25px',
+                    borderRadius: '25px',
+                    textDecoration: 'none',
+                    fontSize: '14px',
+                    fontWeight: 'bold',
+                    transition: 'all 0.3s ease',
+                    display: 'inline-block',
+                    border: '1px solid rgba(255,255,255,0.3)'
+                  }}
+                >
+                  📊 Upload Data
+                </Link>
+              </div>
             </div>
           )
         ) : (

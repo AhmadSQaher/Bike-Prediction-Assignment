@@ -40,7 +40,7 @@ const Navbar = ({ user, setUser }) => {
             Home
           </Link>
           
-          {user && user.role !== 'admin' && (
+          {user && user.role === 'user' && (
             <>
               <Link to="/predict" className="nav-link">
                 <span className="nav-icon">🔮</span>
@@ -49,6 +49,19 @@ const Navbar = ({ user, setUser }) => {
               <Link to="/map" className="nav-link">
                 <span className="nav-icon">🗺️</span>
                 Theft Map
+              </Link>
+            </>
+          )}
+          
+          {user && user.role === 'admin' && (
+            <>
+              <Link to="/admin/users" className="nav-link">
+                <span className="nav-icon">👥</span>
+                User Management
+              </Link>
+              <Link to="/admin/data" className="nav-link">
+                <span className="nav-icon">📊</span>
+                Data Upload
               </Link>
             </>
           )}

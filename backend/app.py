@@ -4,6 +4,8 @@ import pandas as pd
 import json
 import smtplib
 import secrets
+import shutil
+import tempfile
 from datetime import datetime, timedelta
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -11,6 +13,7 @@ from email.mime.image import MIMEImage
 from flask import Flask, request, jsonify, session
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.utils import secure_filename
 import matplotlib
 matplotlib.use('Agg')  # Use non-interactive backend
 import matplotlib.pyplot as plt
@@ -236,9 +239,14 @@ def register():
         email = data.get('email')
         password = data.get('password')
         name = data.get('name', '')
+        role = data.get('role', 'user')  # Default to user if not specified
         
         if not email or not password:
             return jsonify({"error": "Email and password are required"}), 400
+        
+        # Validate role
+        if role not in ['user', 'admin']:
+            return jsonify({"error": "Invalid role. Must be 'user' or 'admin'"}), 400
         
         if email in users_db:
             return jsonify({"error": "User already exists"}), 400
@@ -248,13 +256,13 @@ def register():
         users_db[email] = {
             'password': hashed_password,
             'name': name,
-            'role': 'user',  # default role
+            'role': role,
             'created_at': datetime.now().isoformat()
         }
         
         return jsonify({
             "message": "User registered successfully",
-            "user": {"email": email, "name": name, "role": "user"}
+            "user": {"email": email, "name": name, "role": role}
         }), 201
         
     except Exception as e:
@@ -385,6 +393,261 @@ def reset_password():
         del password_reset_tokens[token]
         
         return jsonify({"message": "Password reset successful"}), 200
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# Admin Routes
+@app.route("/api/admin/users", methods=["GET"])
+def get_all_users():
+    """Get all registered users - Admin only"""
+    try:
+        # Check authentication and admin role
+        if 'user_email' not in session:
+            return jsonify({"error": "Authentication required"}), 401
+        
+        if session.get('user_role') != 'admin':
+            return jsonify({"error": "Admin access required"}), 403
+        
+        # Return user list (excluding passwords)
+        users_list = []
+        for email, user_data in users_db.items():
+            users_list.append({
+                "email": email,
+                "name": user_data['name'],
+                "role": user_data['role'],
+                "created_at": user_data['created_at']
+            })
+        
+        return jsonify({
+            "users": users_list,
+            "total_count": len(users_list)
+        }), 200
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/admin/users/<email>", methods=["PUT"])
+def update_user(email):
+    """Update a user - Admin only"""
+    try:
+        # Check authentication and admin role
+        if 'user_email' not in session:
+            return jsonify({"error": "Authentication required"}), 401
+        
+        if session.get('user_role') != 'admin':
+            return jsonify({"error": "Admin access required"}), 403
+        
+        # Check if user exists
+        if email not in users_db:
+            return jsonify({"error": "User not found"}), 404
+        
+        # Prevent admin from modifying other admin accounts
+        if users_db[email]['role'] == 'admin':
+            return jsonify({"error": "Cannot modify admin users"}), 403
+        
+        data = request.get_json()
+        name = data.get('name')
+        new_password = data.get('password')
+        
+        if name is not None:
+            users_db[email]['name'] = name
+        
+        if new_password:
+            users_db[email]['password'] = generate_password_hash(new_password)
+        
+        return jsonify({
+            "message": "User updated successfully",
+            "user": {
+                "email": email,
+                "name": users_db[email]['name'],
+                "role": users_db[email]['role']
+            }
+        }), 200
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/admin/users/<email>", methods=["DELETE"])
+def delete_user(email):
+    """Delete a user - Admin only"""
+    try:
+        # Check authentication and admin role
+        if 'user_email' not in session:
+            return jsonify({"error": "Authentication required"}), 401
+        
+        if session.get('user_role') != 'admin':
+            return jsonify({"error": "Admin access required"}), 403
+        
+        # Check if user exists
+        if email not in users_db:
+            return jsonify({"error": "User not found"}), 404
+        
+        # Prevent admin from deleting other admin accounts or themselves
+        if users_db[email]['role'] == 'admin':
+            return jsonify({"error": "Cannot delete admin users"}), 403
+        
+        if email == session['user_email']:
+            return jsonify({"error": "Cannot delete your own account"}), 403
+        
+        # Delete the user
+        del users_db[email]
+        
+        return jsonify({"message": "User deleted successfully"}), 200
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/admin/users", methods=["POST"])
+def create_user():
+    """Create a new user - Admin only"""
+    try:
+        # Check authentication and admin role
+        if 'user_email' not in session:
+            return jsonify({"error": "Authentication required"}), 401
+        
+        if session.get('user_role') != 'admin':
+            return jsonify({"error": "Admin access required"}), 403
+        
+        data = request.get_json()
+        email = data.get('email')
+        password = data.get('password')
+        name = data.get('name', '')
+        
+        if not email or not password:
+            return jsonify({"error": "Email and password are required"}), 400
+        
+        if email in users_db:
+            return jsonify({"error": "User already exists"}), 400
+        
+        # Create user with 'user' role (admin can only create regular users)
+        hashed_password = generate_password_hash(password)
+        users_db[email] = {
+            'password': hashed_password,
+            'name': name,
+            'role': 'user',
+            'created_at': datetime.now().isoformat()
+        }
+        
+        return jsonify({
+            "message": "User created successfully",
+            "user": {"email": email, "name": name, "role": "user"}
+        }), 201
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/admin/upload-data", methods=["POST"])
+def upload_data():
+    """Upload new CSV data - Admin only"""
+    try:
+        # Check authentication and admin role
+        if 'user_email' not in session:
+            return jsonify({"error": "Authentication required"}), 401
+        
+        if session.get('user_role') != 'admin':
+            return jsonify({"error": "Admin access required"}), 403
+        
+        # Check if file was uploaded
+        if 'file' not in request.files:
+            return jsonify({"error": "No file uploaded"}), 400
+        
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({"error": "No file selected"}), 400
+        
+        if not file.filename.endswith('.csv'):
+            return jsonify({"error": "File must be a CSV file"}), 400
+        
+        # Save the uploaded file
+        data_dir = os.path.join(os.path.dirname(__file__), 'data')
+        
+        # Ensure data directory exists and is writable
+        try:
+            os.makedirs(data_dir, exist_ok=True)
+            # Test write permissions
+            test_file = os.path.join(data_dir, 'test_permissions.tmp')
+            with open(test_file, 'w') as f:
+                f.write('test')
+            os.remove(test_file)
+        except Exception as perm_error:
+            # Fallback to temp directory if local directory has permission issues
+            print(f"Local directory permission error: {perm_error}")
+            data_dir = tempfile.gettempdir()
+            print(f"Using temp directory: {data_dir}")
+        
+        current_file_path = os.path.join(data_dir, 'Bicycle_Thefts_Open_Data.csv')
+        backup_file_path = os.path.join(data_dir, f'Bicycle_Thefts_Open_Data_backup_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv')
+        
+        # Check if current file is locked/in use
+        if os.path.exists(current_file_path):
+            try:
+                with open(current_file_path, 'r+') as test_handle:
+                    pass  # Just test if we can open for writing
+            except PermissionError:
+                return jsonify({
+                    "error": "The CSV file is currently in use by another application (like Excel). Please close the file and try again."
+                }), 400
+        
+        # Create backup of current file if it exists
+        if os.path.exists(current_file_path):
+            try:
+                shutil.copy2(current_file_path, backup_file_path)
+            except Exception as backup_error:
+                return jsonify({
+                    "error": f"Failed to create backup: {str(backup_error)}"
+                }), 500
+        
+        # Save new file with the expected name
+        try:
+            file.save(current_file_path)
+        except Exception as save_error:
+            return jsonify({
+                "error": f"Failed to save file: {str(save_error)}. Please check file permissions."
+            }), 500
+        
+        # Validate the uploaded CSV (basic check)
+        try:
+            df = pd.read_csv(current_file_path)
+            row_count = len(df)
+            
+            # Check for required columns
+            required_columns = ['LAT_WGS84', 'LONG_WGS84', 'STATUS', 'DIVISION']
+            missing_columns = [col for col in required_columns if col not in df.columns]
+            
+            if missing_columns:
+                # Restore backup if validation fails
+                if os.path.exists(backup_file_path):
+                    try:
+                        shutil.copy2(backup_file_path, current_file_path)
+                    except Exception as restore_error:
+                        print(f"Failed to restore backup: {restore_error}")
+                return jsonify({
+                    "error": f"CSV missing required columns: {missing_columns}"
+                }), 400
+            
+            return jsonify({
+                "message": "Data uploaded successfully",
+                "row_count": row_count,
+                "backup_created": os.path.basename(backup_file_path) if os.path.exists(backup_file_path) else "No backup needed",
+                "upload_time": datetime.now().isoformat(),
+                "data_directory": data_dir,
+                "file_path": current_file_path
+            }), 200
+            
+        except Exception as validation_error:
+            # Restore backup if validation fails
+            if os.path.exists(backup_file_path):
+                try:
+                    shutil.copy2(backup_file_path, current_file_path)
+                except Exception as restore_error:
+                    print(f"Failed to restore backup after validation error: {restore_error}")
+            return jsonify({
+                "error": f"Invalid CSV file: {str(validation_error)}"
+            }), 400
+            return jsonify({
+                "error": f"Invalid CSV file: {str(validation_error)}"
+            }), 400
         
     except Exception as e:
         return jsonify({"error": str(e)}), 500

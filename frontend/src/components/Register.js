@@ -7,7 +7,8 @@ const Register = () => {
     name: '',
     email: '',
     password: '',
-    confirmPassword: ''
+    confirmPassword: '',
+    role: 'user' // Default to user role
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -50,7 +51,8 @@ const Register = () => {
         body: JSON.stringify({
           name: formData.name,
           email: formData.email,
-          password: formData.password
+          password: formData.password,
+          role: formData.role
         }),
       });
 
@@ -118,6 +120,38 @@ const Register = () => {
           required
           disabled={loading}
         />
+        
+        <div style={{ margin: '15px 0', textAlign: 'left' }}>
+          <label style={{ display: 'block', marginBottom: '10px', fontWeight: 'bold', color: '#333' }}>
+            Account Type:
+          </label>
+          <div style={{ display: 'flex', gap: '20px' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}>
+              <input
+                type="radio"
+                name="role"
+                value="user"
+                checked={formData.role === 'user'}
+                onChange={handleChange}
+                disabled={loading}
+              />
+              <span>👤 User</span>
+              <small style={{ color: '#666', marginLeft: '5px' }}>(Make predictions)</small>
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}>
+              <input
+                type="radio"
+                name="role"
+                value="admin"
+                checked={formData.role === 'admin'}
+                onChange={handleChange}
+                disabled={loading}
+              />
+              <span>👨‍💼 Admin</span>
+              <small style={{ color: '#666', marginLeft: '5px' }}>(Manage system)</small>
+            </label>
+          </div>
+        </div>
         
         <button type="submit" disabled={loading}>
           {loading ? 'Registering...' : 'Register'}
