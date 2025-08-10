@@ -5,6 +5,7 @@ import Home from './components/Home';
 import Login from './components/Login';
 import Register from './components/Register';
 import ForgotPassword from './components/ForgotPassword';
+import ResetPassword from './components/ResetPassword';
 import PredictionForm from './components/PredictionForm';
 import ResponseDisplay from './components/ResponseDisplay';
 import InteractiveMap from './components/InteractiveMap';
@@ -40,7 +41,7 @@ function App() {
   const [user, setUser] = useState(null);
   const location = useLocation();
 
-  const hideStaticContent = ['/login', '/register', '/forgot-password', '/predict', '/result', '/map'].includes(location.pathname);
+  const hideStaticContent = ['/login', '/register', '/forgot-password', '/reset-password', '/predict', '/result', '/map'].includes(location.pathname);
 
   useEffect(() => {
     // Check authentication status on app load
@@ -59,6 +60,7 @@ function App() {
           <Route path="/login" element={<Login setUser={setUser} />} />
           <Route path="/register" element={<Register />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
           
           {/* Protected Routes */}
           <Route 

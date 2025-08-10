@@ -25,6 +25,7 @@ const loadMapping = async (filePath) => {
 const PredictionForm = ({ setResponse }) => {
   const navigate = useNavigate();
   const [modelVersion, setModelVersion] = useState("v1");
+  const [showTips, setShowTips] = useState(false);
 
   // Common mapping for both models
   const [primaryOffenceOptions, setPrimaryOffenceOptions] = useState([]);
@@ -230,45 +231,74 @@ const PredictionForm = ({ setResponse }) => {
         backgroundColor: '#f8f9fa',
         border: '1px solid #dee2e6',
         borderRadius: '8px',
-        padding: '20px',
-        marginBottom: '25px'
+        marginBottom: '25px',
+        overflow: 'hidden'
       }}>
-        <h3 style={{ marginTop: '0', color: '#495057' }}>💡 Tips for Filling Out the Form</h3>
-        <p style={{ marginBottom: '15px', color: '#6c757d' }}>
-          Please fill out the fields as instructed for the selected model version.
-        </p>
+        <div 
+          onClick={() => setShowTips(!showTips)}
+          style={{
+            padding: '20px',
+            cursor: 'pointer',
+            backgroundColor: '#e9ecef',
+            borderBottom: showTips ? '1px solid #dee2e6' : 'none',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            transition: 'background-color 0.3s ease'
+          }}
+          onMouseOver={(e) => e.target.style.backgroundColor = '#d6d9dc'}
+          onMouseOut={(e) => e.target.style.backgroundColor = '#e9ecef'}
+        >
+          <h3 style={{ margin: '0', color: '#495057' }}>💡 Tips for Filling Out the Form</h3>
+          <span style={{ 
+            fontSize: '18px', 
+            fontWeight: 'bold',
+            transform: showTips ? 'rotate(180deg)' : 'rotate(0deg)',
+            transition: 'transform 0.3s ease'
+          }}>
+            ▼
+          </span>
+        </div>
         
-        {modelVersion === "v1" ? (
-          <div>
-            <h4 style={{ color: '#007bff', marginBottom: '10px' }}>For Model v1 (Class Weighting x Random Forest):</h4>
-            <ul style={{ paddingLeft: '20px', color: '#495057' }}>
-              <li><strong>PRIMARY OFFENCE:</strong> Select the offence code (e.g., robbery, burglary) from the dropdown.</li>
-              <li><strong>BIKE MAKE:</strong> Select the bike manufacturer from the dropdown.</li>
-              <li><strong>NEIGHBOURHOOD 158:</strong> Choose the neighbourhood code 158 from the dropdown.</li>
-              <li><strong>NEIGHBOURHOOD 140:</strong> Choose the neighbourhood code 140 from the dropdown.</li>
-              <li><strong>BIKE COST:</strong> Enter the bike's cost (e.g., 200).</li>
-              <li><strong>LAT_WGS84:</strong> Enter the latitude coordinate (e.g., 43.6532).</li>
-              <li><strong>OCC_DOY:</strong> Enter the day-of-year the theft occurred (e.g., 200).</li>
-              <li><strong>REPORT YEAR:</strong> Enter the year the report was filed (e.g., 2018).</li>
-              <li><strong>REPORT DAY:</strong> Enter the day of the month of the report (e.g., 15).</li>
-              <li><strong>OCC DAY:</strong> Enter the day of the month the theft occurred (e.g., 10).</li>
-            </ul>
-          </div>
-        ) : (
-          <div>
-            <h4 style={{ color: '#28a745', marginBottom: '10px' }}>For Model v2 (SMOTETomek x XGBoost):</h4>
-            <ul style={{ paddingLeft: '20px', color: '#495057' }}>
-              <li><strong>PRIMARY OFFENCE:</strong> Select the offence code from the dropdown.</li>
-              <li><strong>DIVISION:</strong> Select the police division from the dropdown.</li>
-              <li><strong>PREMISES TYPE:</strong> Choose the type of premises where the theft occurred.</li>
-              <li><strong>BIKE TYPE:</strong> Select the bike type from the dropdown.</li>
-              <li><strong>BIKE COLOUR:</strong> Choose the bike colour from the dropdown.</li>
-              <li><strong>NEIGHBOURHOOD 140:</strong> Select the neighbourhood code 140 from the dropdown.</li>
-              <li><strong>OCC DOW:</strong> Enter the day of the week when the theft occurred (0 for Sunday, 6 for Saturday).</li>
-              <li><strong>REPORT YEAR:</strong> Enter the year the report was filed (e.g., 2018).</li>
-              <li><strong>BIKE SPEED:</strong> Enter the bike's speed (e.g., 6).</li>
-              <li><strong>BIKE COST:</strong> Enter the bike's cost (e.g., 500).</li>
-            </ul>
+        {showTips && (
+          <div style={{ padding: '20px', paddingTop: '15px' }}>
+            <p style={{ marginBottom: '15px', color: '#6c757d' }}>
+              Please fill out the fields as instructed for the selected model version.
+            </p>
+            
+            {modelVersion === "v1" ? (
+              <div>
+                <h4 style={{ color: '#007bff', marginBottom: '10px' }}>For Model v1 (Class Weighting x Random Forest):</h4>
+                <ul style={{ paddingLeft: '20px', color: '#495057' }}>
+                  <li><strong>PRIMARY OFFENCE:</strong> Select the offence code (e.g., robbery, burglary) from the dropdown.</li>
+                  <li><strong>BIKE MAKE:</strong> Select the bike manufacturer from the dropdown.</li>
+                  <li><strong>NEIGHBOURHOOD 158:</strong> Choose the neighbourhood code 158 from the dropdown.</li>
+                  <li><strong>NEIGHBOURHOOD 140:</strong> Choose the neighbourhood code 140 from the dropdown.</li>
+                  <li><strong>BIKE COST:</strong> Enter the bike's cost (e.g., 200).</li>
+                  <li><strong>LAT_WGS84:</strong> Enter the latitude coordinate (e.g., 43.6532).</li>
+                  <li><strong>OCC_DOY:</strong> Enter the day-of-year the theft occurred (e.g., 200).</li>
+                  <li><strong>REPORT YEAR:</strong> Enter the year the report was filed (e.g., 2018).</li>
+                  <li><strong>REPORT DAY:</strong> Enter the day of the month of the report (e.g., 15).</li>
+                  <li><strong>OCC DAY:</strong> Enter the day of the month the theft occurred (e.g., 10).</li>
+                </ul>
+              </div>
+            ) : (
+              <div>
+                <h4 style={{ color: '#28a745', marginBottom: '10px' }}>For Model v2 (SMOTETomek x XGBoost):</h4>
+                <ul style={{ paddingLeft: '20px', color: '#495057' }}>
+                  <li><strong>PRIMARY OFFENCE:</strong> Select the offence code from the dropdown.</li>
+                  <li><strong>DIVISION:</strong> Select the police division from the dropdown.</li>
+                  <li><strong>PREMISES TYPE:</strong> Choose the type of premises where the theft occurred.</li>
+                  <li><strong>BIKE TYPE:</strong> Select the bike type from the dropdown.</li>
+                  <li><strong>BIKE COLOUR:</strong> Choose the bike colour from the dropdown.</li>
+                  <li><strong>NEIGHBOURHOOD 140:</strong> Select the neighbourhood code 140 from the dropdown.</li>
+                  <li><strong>OCC DOW:</strong> Enter the day of the week when the theft occurred (0 for Sunday, 6 for Saturday).</li>
+                  <li><strong>REPORT YEAR:</strong> Enter the year the report was filed (e.g., 2018).</li>
+                  <li><strong>BIKE SPEED:</strong> Enter the bike's speed (e.g., 6).</li>
+                  <li><strong>BIKE COST:</strong> Enter the bike's cost (e.g., 500).</li>
+                </ul>
+              </div>
+            )}
           </div>
         )}
       </div>

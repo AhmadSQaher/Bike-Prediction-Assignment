@@ -29,6 +29,111 @@ CORS(app, supports_credentials=True)  # Enable CORS for frontend with credential
 users_db = {}
 password_reset_tokens = {}
 
+# Email configuration (you can set these as environment variables)
+EMAIL_HOST = 'smtp.gmail.com'
+EMAIL_PORT = 587
+EMAIL_HOST_USER = '54m3r05@gmail.com' 
+EMAIL_HOST_PASSWORD = 'neua qsrk dwda hobq' 
+EMAIL_USE_TLS = True
+
+def send_reset_email(email, reset_token, user_name="User"):
+    """
+    Send password reset email to the user.
+    """
+    try:
+        # Create message
+        msg = MIMEMultipart()
+        msg['From'] = EMAIL_HOST_USER
+        msg['To'] = email
+        msg['Subject'] = "🚴 Bike Recovery AI - Password Reset Request"
+        
+        # Reset link (in production, this would be your frontend URL)
+        reset_link = f"http://localhost:3000/reset-password?token={reset_token}"
+        
+        # HTML email body
+        html_body = f"""
+        <html>
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            </head>
+            <body style="font-family: Arial, sans-serif; background-color: #f8f9fa; padding: 20px; margin: 0;">
+                <div style="max-width: 600px; margin: 0 auto; background-color: white; border-radius: 10px; padding: 30px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                    <div style="text-align: center; margin-bottom: 30px;">
+                        <h1 style="color: #011b37; margin-bottom: 10px;">🚴 Bike Recovery AI</h1>
+                        <h2 style="color: #022a56; margin-top: 0;">Password Reset Request</h2>
+                    </div>
+                    
+                    <p style="font-size: 16px; color: #333; line-height: 1.6;">
+                        Hello {user_name},
+                    </p>
+                    
+                    <p style="font-size: 16px; color: #333; line-height: 1.6;">
+                        We received a request to reset your password for your Bike Recovery AI account. 
+                        If you made this request, please click the button below to reset your password:
+                    </p>
+                    
+                    <div style="text-align: center; margin: 30px 0;">
+                        <table cellpadding="0" cellspacing="0" border="0" style="margin: 0 auto;">
+                            <tr>
+                                <td style="background: linear-gradient(135deg, #011b37 0%, #022a56 100%); border-radius: 25px; padding: 0;">
+                                    <a href="{reset_link}" 
+                                       style="display: inline-block; 
+                                              color: white; 
+                                              padding: 15px 30px; 
+                                              text-decoration: none; 
+                                              border-radius: 25px; 
+                                              font-weight: bold; 
+                                              font-size: 16px;">
+                                        🔐 Reset My Password
+                                    </a>
+                                </td>
+                            </tr>
+                        </table>
+                    </div>
+                    
+                    <p style="font-size: 14px; color: #666; line-height: 1.6; margin-top: 20px;">
+                        Or copy and paste this link into your browser:
+                    </p>
+                    <p style="font-size: 14px; color: #007bff; line-height: 1.6; word-break: break-all;">
+                        {reset_link}
+                    </p>
+                    
+                    <p style="font-size: 14px; color: #666; line-height: 1.6; margin-top: 20px;">
+                        <strong>Important:</strong> This link will expire in 1 hour for security reasons.
+                    </p>
+                    
+                    <p style="font-size: 14px; color: #666; line-height: 1.6;">
+                        If you didn't request this password reset, please ignore this email. 
+                        Your password will remain unchanged.
+                    </p>
+                    
+                    <hr style="border: 1px solid #eee; margin: 30px 0;">
+                    
+                    <p style="font-size: 12px; color: #999; text-align: center;">
+                        This is an automated email from Bike Recovery AI. Please do not reply to this email.
+                    </p>
+                </div>
+            </body>
+        </html>
+        """
+        
+        msg.attach(MIMEText(html_body, 'html'))
+        
+        # Connect to server and send email
+        server = smtplib.SMTP(EMAIL_HOST, EMAIL_PORT)
+        server.starttls()
+        server.login(EMAIL_HOST_USER, EMAIL_HOST_PASSWORD)
+        text = msg.as_string()
+        server.sendmail(EMAIL_HOST_USER, email, text)
+        server.quit()
+        
+        return True
+        
+    except Exception as e:
+        print(f"Error sending email: {str(e)}")
+        return False
+
 # Email configuration (configure with real SMTP settings)
 EMAIL_CONFIG = {
     'smtp_server': 'smtp.gmail.com',
@@ -145,8 +250,19 @@ def forgot_password():
         if not email:
             return jsonify({"error": "Email is required"}), 400
         
+        # Check if email exists in our database
         if email not in users_db:
-            return jsonify({"error": "User not found"}), 404
+            # Log for debugging (email doesn't exist)
+            print(f"Password reset requested for non-existent email: {email}")
+            # Return a more helpful message for non-registered emails
+            return jsonify({
+                "message": "No account found with this email address. Please check your email or register for a new account.",
+                "suggestion": "If you haven't registered yet, please create an account first.",
+                "debug_info": "Email not found in database" if app.debug else None
+            }), 404
+        
+        user = users_db[email]
+        print(f"Password reset requested for existing user: {email}")
         
         # Generate reset token
         reset_token = secrets.token_urlsafe(32)
@@ -155,16 +271,27 @@ def forgot_password():
             'expires': datetime.now() + timedelta(hours=1)
         }
         
-        # In a real application, send email here
-        # send_reset_email(email, reset_token)
+        # Send reset email
+        email_sent = send_reset_email(email, reset_token, user.get('name', 'User'))
         
-        return jsonify({
-            "message": "Password reset token generated",
-            "reset_token": reset_token  # In production, don't return this
-        }), 200
+        if email_sent:
+            print(f"Password reset email sent successfully to: {email}")
+            return jsonify({
+                "message": "Password reset email sent successfully. Please check your inbox.",
+                "success": True,
+                "debug_info": "Email sent successfully" if app.debug else None
+            }), 200
+        else:
+            print(f"Failed to send password reset email to: {email}")
+            return jsonify({
+                "error": "Failed to send reset email. Please try again later.",
+                "success": False,
+                "debug_info": "Email sending failed" if app.debug else None
+            }), 500
         
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        print(f"Forgot password error: {str(e)}")
+        return jsonify({"error": "An error occurred. Please try again later."}), 500
 
 @app.route("/api/reset-password", methods=["POST"])
 def reset_password():
