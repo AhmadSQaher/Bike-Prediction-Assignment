@@ -474,6 +474,172 @@ def get_current_user():
         "role": user['role']
     }), 200
 
+@app.route("/api/user/profile", methods=["PUT"])
+def update_user_profile():
+    """Update current user's profile information"""
+    try:
+        # Check authentication
+        if 'user_email' not in session:
+            return jsonify({"error": "Authentication required"}), 401
+        
+        user_email = session['user_email']
+        user = get_user(user_email)
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+        
+        data = request.get_json()
+        name = data.get('name')
+        new_email = data.get('new_email')
+        current_password = data.get('current_password')
+        new_password = data.get('new_password')
+        
+        # Validate that at least one field is being updated
+        if not name and not new_email and not new_password:
+            return jsonify({"error": "At least one field (name, new_email, or new_password) must be provided"}), 400
+        
+        updates = {}
+        
+        # Update name if provided
+        if name is not None:
+            if len(name.strip()) == 0:
+                return jsonify({"error": "Name cannot be empty"}), 400
+            updates['name'] = name.strip()
+        
+        # Update email if provided
+        if new_email:
+            # Validate email format (basic validation)
+            import re
+            email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+            if not re.match(email_pattern, new_email):
+                return jsonify({"error": "Invalid email format"}), 400
+            
+            # Check if new email is different from current
+            if new_email.lower() == user_email.lower():
+                return jsonify({"error": "New email must be different from current email"}), 400
+            
+            # Check if email already exists
+            existing_user = get_user(new_email)
+            if existing_user:
+                return jsonify({"error": "Email already exists. Please choose a different email."}), 400
+            
+            # Require current password for email change
+            if not current_password:
+                return jsonify({"error": "Current password is required to change email"}), 400
+            
+            if not check_password_hash(user['password'], current_password):
+                return jsonify({"error": "Current password is incorrect"}), 400
+            
+            updates['email'] = new_email.lower()
+        
+        # Update password if provided
+        if new_password:
+            # Verify current password first
+            if not current_password:
+                return jsonify({"error": "Current password is required to change password"}), 400
+            
+            if not check_password_hash(user['password'], current_password):
+                return jsonify({"error": "Current password is incorrect"}), 400
+            
+            # Validate new password
+            if len(new_password) < 6:
+                return jsonify({"error": "New password must be at least 6 characters long"}), 400
+            
+            updates['password'] = generate_password_hash(new_password)
+        
+        # Update user information
+        update_user(user_email, updates)
+        
+        # Handle email change - need to update session and handle user deletion/creation
+        if 'email' in updates:
+            new_email = updates['email']
+            
+            # Delete old user record
+            delete_user(user_email)
+            
+            # Create new user record with updated email
+            user_data = {
+                'email': new_email,
+                'password': user['password'] if 'password' not in updates else updates['password'],
+                'name': updates.get('name', user['name']),
+                'role': user['role'],
+                'created_at': user.get('created_at', datetime.now().isoformat())
+            }
+            
+            if users_collection is not None:
+                try:
+                    users_collection.insert_one(user_data)
+                except Exception as e:
+                    print(f"MongoDB error creating updated user: {e}")
+                    users_db[new_email] = user_data
+            else:
+                users_db[new_email] = user_data
+            
+            # Update session with new email
+            session['user_email'] = new_email
+            user_email = new_email  # Update local variable for response
+        
+        # Get updated user data for response
+        updated_user = get_user(user_email)
+        
+        return jsonify({
+            "message": "Profile updated successfully",
+            "user": {
+                "email": user_email,
+                "name": updated_user['name'],
+                "role": updated_user['role']
+            }
+        }), 200
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/user/change-password", methods=["POST"])
+def change_password():
+    """Change current user's password"""
+    try:
+        # Check authentication
+        if 'user_email' not in session:
+            return jsonify({"error": "Authentication required"}), 401
+        
+        user_email = session['user_email']
+        user = get_user(user_email)
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+        
+        data = request.get_json()
+        current_password = data.get('current_password')
+        new_password = data.get('new_password')
+        confirm_password = data.get('confirm_password')
+        
+        # Validate input
+        if not current_password or not new_password or not confirm_password:
+            return jsonify({"error": "Current password, new password, and confirm password are required"}), 400
+        
+        # Verify current password
+        if not check_password_hash(user['password'], current_password):
+            return jsonify({"error": "Current password is incorrect"}), 400
+        
+        # Check if new password matches confirmation
+        if new_password != confirm_password:
+            return jsonify({"error": "New password and confirmation do not match"}), 400
+        
+        # Validate new password
+        if len(new_password) < 6:
+            return jsonify({"error": "New password must be at least 6 characters long"}), 400
+        
+        # Check if new password is different from current
+        if check_password_hash(user['password'], new_password):
+            return jsonify({"error": "New password must be different from current password"}), 400
+        
+        # Update password
+        hashed_password = generate_password_hash(new_password)
+        update_user(user_email, {'password': hashed_password})
+        
+        return jsonify({"message": "Password changed successfully"}), 200
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route("/api/forgot-password", methods=["POST"])
 def forgot_password():
     try:

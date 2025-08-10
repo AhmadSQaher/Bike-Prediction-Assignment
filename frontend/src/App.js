@@ -9,6 +9,7 @@ import ResetPassword from './components/ResetPassword';
 import PredictionForm from './components/PredictionForm';
 import ResponseDisplay from './components/ResponseDisplay';
 import InteractiveMap from './components/InteractiveMap';
+import Profile from './components/Profile';
 import UserManagement from './components/UserManagement';
 import DataUpload from './components/DataUpload';
 import About from './components/About';
@@ -62,7 +63,7 @@ function App() {
   const [user, setUser] = useState(null);
   const location = useLocation();
 
-  const hideStaticContent = ['/login', '/register', '/forgot-password', '/reset-password', '/predict', '/result', '/map', '/admin/users', '/admin/data'].includes(location.pathname);
+  const hideStaticContent = ['/login', '/register', '/forgot-password', '/reset-password', '/predict', '/result', '/map', '/profile', '/admin/users', '/admin/data'].includes(location.pathname);
 
   useEffect(() => {
     // Check authentication status on app load
@@ -105,6 +106,14 @@ function App() {
             element={
               <ProtectedUserRoute>
                 <InteractiveMap />
+              </ProtectedUserRoute>
+            } 
+          />
+          <Route 
+            path="/profile" 
+            element={
+              <ProtectedUserRoute>
+                <Profile user={user} setUser={setUser} />
               </ProtectedUserRoute>
             } 
           />
