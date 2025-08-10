@@ -67,6 +67,10 @@ const Navbar = ({ user, setUser }) => {
                 <span className="nav-icon">📊</span>
                 Data Upload
               </Link>
+              <Link to="/profile" className="nav-link">
+                <span className="nav-icon">👤</span>
+                Profile
+              </Link>
             </>
           )}
         </div>

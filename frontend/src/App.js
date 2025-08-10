@@ -58,6 +58,18 @@ const ProtectedAdminRoute = ({ children }) => {
   return children;
 };
 
+// Protected Route Component for Authenticated Users (Both User and Admin)
+const ProtectedAuthRoute = ({ children }) => {
+  const user = localStorage.getItem('user');
+  const userData = user ? JSON.parse(user) : null;
+  
+  if (!userData) {
+    return <Navigate to="/login" replace />;
+  }
+  
+  return children;
+};
+
 function App() {
   const [response, setResponse] = useState(null);
   const [user, setUser] = useState(null);
@@ -112,9 +124,9 @@ function App() {
           <Route 
             path="/profile" 
             element={
-              <ProtectedUserRoute>
+              <ProtectedAuthRoute>
                 <Profile user={user} setUser={setUser} />
-              </ProtectedUserRoute>
+              </ProtectedAuthRoute>
             } 
           />
           
