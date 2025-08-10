@@ -337,18 +337,56 @@ def get_theft_data():
         if session.get('user_role') == 'admin':
             return jsonify({"error": "Admin users cannot view theft data"}), 403
         
-        # Load and return sample theft data
-        # In a real application, this would query a database
-        sample_data = [
-            {"lat": 43.6532, "lng": -79.3832, "division": "Toronto", "recovered": True, "bike_type": "Mountain"},
-            {"lat": 43.6426, "lng": -79.3871, "division": "Toronto", "recovered": False, "bike_type": "Road"},
-            {"lat": 43.6629, "lng": -79.3957, "division": "Toronto", "recovered": True, "bike_type": "Hybrid"},
-            # Add more sample data as needed
-        ]
+        # Load actual theft data from CSV
+        data_path = os.path.join('data', 'Bicycle_Thefts_Open_Data.csv')
+        df = pd.read_csv(data_path)
+        
+        # Get query parameters for filtering
+        limit = request.args.get('limit', 1000, type=int)  # Default to 1000 records for performance
+        year = request.args.get('year', None)
+        status = request.args.get('status', None)  # STOLEN or RECOVERED
+        
+        # Filter by year if specified
+        if year:
+            df = df[df['OCC_YEAR'] == int(year)]
+        
+        # Filter by status if specified
+        if status:
+            df = df[df['STATUS'] == status.upper()]
+        
+        # Remove rows with missing coordinates
+        df = df.dropna(subset=['LAT_WGS84', 'LONG_WGS84'])
+        
+        # Limit the number of records for performance
+        df = df.head(limit)
+        
+        # Convert to list of dictionaries
+        theft_data = []
+        for _, row in df.iterrows():
+            theft_data.append({
+                "lat": float(row['LAT_WGS84']),
+                "lng": float(row['LONG_WGS84']),
+                "division": row['DIVISION'],
+                "recovered": row['STATUS'] == 'RECOVERED',
+                "bike_type": row['BIKE_TYPE'] if pd.notna(row['BIKE_TYPE']) else 'Unknown',
+                "bike_make": row['BIKE_MAKE'] if pd.notna(row['BIKE_MAKE']) else 'Unknown',
+                "bike_colour": row['BIKE_COLOUR'] if pd.notna(row['BIKE_COLOUR']) else 'Unknown',
+                "bike_cost": row['BIKE_COST'] if pd.notna(row['BIKE_COST']) else 0,
+                "neighbourhood": row['NEIGHBOURHOOD_140'] if pd.notna(row['NEIGHBOURHOOD_140']) else 'Unknown',
+                "premises_type": row['PREMISES_TYPE'] if pd.notna(row['PREMISES_TYPE']) else 'Unknown',
+                "occ_year": int(row['OCC_YEAR']),
+                "occ_month": row['OCC_MONTH'],
+                "primary_offence": row['PRIMARY_OFFENCE']
+            })
         
         return jsonify({
-            "theft_data": sample_data,
-            "total_count": len(sample_data)
+            "theft_data": theft_data,
+            "total_count": len(theft_data),
+            "filters_applied": {
+                "year": year,
+                "status": status,
+                "limit": limit
+            }
         }), 200
         
     except Exception as e:
