@@ -134,6 +134,76 @@ def send_reset_email(email, reset_token, user_name="User"):
         print(f"Error sending email: {str(e)}")
         return False
 
+def send_prediction_result_email(email, user_name, subject, email_content, email_format):
+    """
+    Send prediction results email to the user.
+    """
+    try:
+        # Create message
+        msg = MIMEMultipart()
+        msg['From'] = EMAIL_HOST_USER
+        msg['To'] = email
+        msg['Subject'] = subject
+        
+        # Determine content type based on format
+        if email_format == 'graph':
+            # For graph format, email_content is already HTML
+            msg.attach(MIMEText(email_content, 'html'))
+        elif email_format == 'text' or email_format == 'percentage':
+            # For text and percentage, create a nice HTML wrapper
+            html_body = f"""
+            <html>
+                <head>
+                    <meta charset="UTF-8">
+                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                </head>
+                <body style="font-family: Arial, sans-serif; background-color: #f8f9fa; padding: 20px; margin: 0;">
+                    <div style="max-width: 600px; margin: 0 auto; background-color: white; border-radius: 10px; padding: 30px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                        <div style="text-align: center; margin-bottom: 30px;">
+                            <h1 style="color: #011b37; margin-bottom: 10px;">🚴 Bike Recovery AI</h1>
+                            <h2 style="color: #022a56; margin-top: 0;">Prediction Results</h2>
+                        </div>
+                        
+                        <p style="font-size: 16px; color: #333; line-height: 1.6;">
+                            Hello {user_name},
+                        </p>
+                        
+                        <p style="font-size: 16px; color: #333; line-height: 1.6;">
+                            Here are your bike theft recovery prediction results:
+                        </p>
+                        
+                        <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0;">
+                            <pre style="white-space: pre-wrap; font-family: Arial, sans-serif; margin: 0; color: #333;">
+{email_content}
+                            </pre>
+                        </div>
+                        
+                        <hr style="border: 1px solid #eee; margin: 30px 0;">
+                        
+                        <p style="font-size: 12px; color: #999; text-align: center;">
+                            This is an automated email from Bike Recovery AI. Please do not reply to this email.
+                        </p>
+                    </div>
+                </body>
+            </html>
+            """
+            msg.attach(MIMEText(html_body, 'html'))
+        
+        # Connect to server and send email
+        server = smtplib.SMTP(EMAIL_HOST, EMAIL_PORT)
+        server.starttls()
+        server.login(EMAIL_HOST_USER, EMAIL_HOST_PASSWORD)
+        text = msg.as_string()
+        server.sendmail(EMAIL_HOST_USER, email, text)
+        server.quit()
+        
+        print(f"Prediction results email sent successfully to: {email} in {email_format} format")
+        return True
+        
+    except Exception as e:
+        print(f"Error sending prediction results email: {str(e)}")
+        return False
+
 # Email configuration (configure with real SMTP settings)
 EMAIL_CONFIG = {
     'smtp_server': 'smtp.gmail.com',
@@ -432,26 +502,37 @@ def send_prediction_email():
             return jsonify({"error": "Prediction data is required"}), 400
         
         user_email = session['user_email']
+        user_name = users_db.get(user_email, {}).get('name', 'User')
         
         # Generate email content based on format
         if email_format == 'graph':
             email_content = generate_graph_email(prediction_data)
+            subject = "🚴 Bike Recovery Prediction - Visual Report"
         elif email_format == 'percentage':
             email_content = generate_percentage_email(prediction_data)
+            subject = "🚴 Bike Recovery Prediction - Percentage Report"
         else:
             email_content = generate_text_email(prediction_data)
+            subject = "🚴 Bike Recovery Prediction - Results"
         
-        # In a real application, send the email here
-        # send_email(user_email, "Bike Theft Recovery Prediction Results", email_content)
+        # Send the actual email
+        email_sent = send_prediction_result_email(user_email, user_name, subject, email_content, email_format)
         
-        return jsonify({
-            "message": "Email sent successfully",
-            "format": email_format,
-            "preview": email_content[:200] + "..." if len(email_content) > 200 else email_content
-        }), 200
+        if email_sent:
+            return jsonify({
+                "message": f"Email sent successfully in {email_format} format!",
+                "format": email_format,
+                "success": True
+            }), 200
+        else:
+            return jsonify({
+                "error": "Failed to send email. Please try again later.",
+                "success": False
+            }), 500
         
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        print(f"Send prediction email error: {str(e)}")
+        return jsonify({"error": "An error occurred while sending email."}), 500
 
 @app.route("/api/theft-data", methods=["GET"])
 def get_theft_data():
@@ -575,92 +656,190 @@ def generate_advice(prediction, probability, input_data):
 def generate_graph_email(prediction_data):
     """Generate email content with embedded graph"""
     try:
+        recovery_percentage = prediction_data.get('recovered_probability_percent', 
+                                                  prediction_data.get('probability', {}).get('recovered', 0) * 100)
+        not_recovered_percentage = 100 - recovery_percentage
+        
         # Create visualization
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
         
         # Probability pie chart
-        probs = [prediction_data['probability']['not_recovered'], prediction_data['probability']['recovered']]
+        probs = [not_recovered_percentage, recovery_percentage]
         labels = ['Not Recovered', 'Recovered']
         colors = ['#ff6b6b', '#4ecdc4']
-        ax1.pie(probs, labels=labels, colors=colors, autopct='%1.1f%%', startangle=90)
-        ax1.set_title('Recovery Probability')
+        wedges, texts, autotexts = ax1.pie(probs, labels=labels, colors=colors, autopct='%1.1f%%', 
+                                          startangle=90, explode=(0.05, 0.05))
+        ax1.set_title('Recovery Probability Distribution', fontsize=14, fontweight='bold')
+        
+        # Make text more readable
+        for autotext in autotexts:
+            autotext.set_color('white')
+            autotext.set_fontweight('bold')
+            autotext.set_fontsize(12)
         
         # Advice visualization
         advice_count = len(prediction_data.get('advice', []))
-        categories = ['Security Tips', 'Action Items', 'General Advice']
-        values = [advice_count//3, advice_count//3, advice_count - 2*(advice_count//3)]
-        ax2.bar(categories, values, color=['#ff9f43', '#54a0ff', '#5f27cd'])
-        ax2.set_title('Advice Categories')
-        ax2.set_ylabel('Number of Tips')
+        categories = ['High Priority\nActions', 'Prevention\nTips', 'Recovery\nSteps']
+        values = [max(1, advice_count//3), max(1, advice_count//3), max(1, advice_count - 2*(advice_count//3))]
+        bars = ax2.bar(categories, values, color=['#ff9f43', '#54a0ff', '#5f27cd'], alpha=0.8)
+        ax2.set_title('Advice Categories', fontsize=14, fontweight='bold')
+        ax2.set_ylabel('Number of Recommendations')
+        ax2.set_ylim(0, max(values) + 1)
+        
+        # Add value labels on bars
+        for bar in bars:
+            height = bar.get_height()
+            ax2.text(bar.get_x() + bar.get_width()/2., height + 0.1,
+                    f'{int(height)}', ha='center', va='bottom', fontweight='bold')
         
         plt.tight_layout()
         
         # Convert to base64 string for email embedding
         img_buffer = io.BytesIO()
-        plt.savefig(img_buffer, format='png', dpi=150, bbox_inches='tight')
+        plt.savefig(img_buffer, format='png', dpi=150, bbox_inches='tight', facecolor='white')
         img_buffer.seek(0)
         img_base64 = base64.b64encode(img_buffer.getvalue()).decode()
         plt.close()
         
+        prediction_text = 'Likely to be recovered' if prediction_data.get('prediction') == 1 else 'Unlikely to be recovered'
+        
         email_content = f"""
         <html>
-        <body>
-            <h2>Bike Theft Recovery Prediction Results</h2>
-            <p><strong>Prediction:</strong> {'Likely to be recovered' if prediction_data['prediction'] == 1 else 'Unlikely to be recovered'}</p>
-            <p><strong>Recovery Probability:</strong> {prediction_data['probability']['recovered']:.1%}</p>
-            
-            <img src="data:image/png;base64,{img_base64}" alt="Prediction Visualization" style="max-width: 100%; height: auto;">
-            
-            <h3>Personalized Advice:</h3>
-            <ul>
-            {''.join(f'<li>{advice}</li>' for advice in prediction_data.get('advice', []))}
-            </ul>
-            
-            <p><em>Generated by Bike Theft Prediction System</em></p>
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        </head>
+        <body style="font-family: Arial, sans-serif; background-color: #f8f9fa; padding: 20px; margin: 0;">
+            <div style="max-width: 700px; margin: 0 auto; background-color: white; border-radius: 10px; padding: 30px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                <div style="text-align: center; margin-bottom: 30px;">
+                    <h1 style="color: #011b37; margin-bottom: 10px;">🚴 Bike Recovery AI</h1>
+                    <h2 style="color: #022a56; margin-top: 0;">Visual Analysis Report</h2>
+                </div>
+                
+                <div style="background-color: #e7f3ff; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #007bff;">
+                    <h3 style="color: #0066cc; margin-top: 0;">📊 Prediction Summary</h3>
+                    <p style="font-size: 18px; margin: 0;"><strong>Status:</strong> {prediction_text}</p>
+                    <p style="font-size: 18px; margin: 5px 0 0 0;"><strong>Recovery Probability:</strong> 
+                       <span style="color: {'#28a745' if recovery_percentage > 70 else '#ffc107' if recovery_percentage > 40 else '#dc3545'}; font-weight: bold;">
+                           {recovery_percentage:.1f}%
+                       </span>
+                    </p>
+                </div>
+                
+                <div style="text-align: center; margin: 30px 0;">
+                    <img src="data:image/png;base64,{img_base64}" alt="Prediction Visualization" style="max-width: 100%; height: auto; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                </div>
+                
+                <div style="background-color: #fff3cd; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #ffc107;">
+                    <h3 style="color: #856404; margin-top: 0;">💡 Personalized Recommendations</h3>
+                    <ul style="margin: 0; padding-left: 20px;">
+                    {''.join(f'<li style="margin: 8px 0; color: #856404;">{advice}</li>' for advice in prediction_data.get('advice', []))}
+                    </ul>
+                </div>
+                
+                <div style="background-color: #f8f9fa; padding: 15px; border-radius: 8px; margin: 20px 0; text-align: center;">
+                    <p style="margin: 0; color: #6c757d; font-size: 14px;">
+                        <strong>Report Generated:</strong> {datetime.now().strftime('%B %d, %Y at %I:%M %p')}<br>
+                        <strong>Model Version:</strong> {prediction_data.get('model_version', 'N/A').upper()}<br>
+                        <strong>Data Source:</strong> Toronto Police Service Historical Data
+                    </p>
+                </div>
+                
+                <hr style="border: 1px solid #eee; margin: 30px 0;">
+                
+                <p style="font-size: 12px; color: #999; text-align: center; margin: 0;">
+                    This is an automated report from Bike Recovery AI. Please do not reply to this email.
+                </p>
+            </div>
         </body>
         </html>
         """
         return email_content
     except Exception as e:
-        return f"Error generating graph email: {str(e)}"
+        print(f"Error generating graph email: {str(e)}")
+        return f"<html><body><h2>Error generating visual report</h2><p>Error: {str(e)}</p></body></html>"
 
 def generate_percentage_email(prediction_data):
     """Generate email content focused on percentages"""
-    recovery_percentage = prediction_data['probability']['recovered'] * 100
+    recovery_percentage = prediction_data.get('recovered_probability_percent', 
+                                              prediction_data.get('probability', {}).get('recovered', 0) * 100)
+    
+    prediction_text = 'LIKELY TO BE RECOVERED' if prediction_data.get('prediction') == 1 else 'UNLIKELY TO BE RECOVERED'
+    
+    # Create a visual representation of the percentage
+    visual_bar = "█" * int(recovery_percentage / 5) + "░" * (20 - int(recovery_percentage / 5))
+    
+    advice_section = ""
+    if prediction_data.get('advice'):
+        advice_section = "\n\nKEY RECOMMENDATIONS:\n" + "\n".join(f"• {advice}" for advice in prediction_data['advice'])
     
     return f"""
-    Bike Theft Recovery Prediction Results
-    ====================================
-    
-    Recovery Probability: {recovery_percentage:.1f}%
-    Not Recovered Probability: {100 - recovery_percentage:.1f}%
-    
-    Prediction: {'LIKELY TO BE RECOVERED' if prediction_data['prediction'] == 1 else 'UNLIKELY TO BE RECOVERED'}
-    
-    Model Version: {prediction_data['model_version'].upper()}
-    
-    Key Recommendations:
-    {chr(10).join(f'• {advice}' for advice in prediction_data.get('advice', []))}
-    
-    Generated by Bike Theft Prediction System
-    """
+🚴 BIKE RECOVERY AI - PERCENTAGE ANALYSIS REPORT
+================================================
+
+RECOVERY PROBABILITY BREAKDOWN:
+┌─────────────────────────────────────────────┐
+│ RECOVERED:     {recovery_percentage:5.1f}% │{visual_bar[:10]}│
+│ NOT RECOVERED: {100 - recovery_percentage:5.1f}% │{visual_bar[10:]}│
+└─────────────────────────────────────────────┘
+
+PREDICTION STATUS: {prediction_text}
+
+DETAILED STATISTICS:
+• Recovery Chance: {recovery_percentage:.2f}%
+• Risk Level: {'LOW' if recovery_percentage > 70 else 'MODERATE' if recovery_percentage > 40 else 'HIGH'}
+• Model Version: {prediction_data.get('model_version', 'N/A').upper()}
+• Confidence Score: {recovery_percentage:.1f}/100
+
+WHAT THIS MEANS:
+• Based on similar theft cases in Toronto Police data
+• {int(recovery_percentage)} out of 100 similar cases were recovered
+• Your bike falls into the {'high', 'moderate', 'low'}[2 if recovery_percentage > 70 else 1 if recovery_percentage > 40 else 0] recovery probability category
+{advice_section}
+
+NEXT STEPS:
+1. Report to police immediately
+2. Check local bike recovery websites
+3. Monitor online marketplaces
+4. Share on social media
+
+Generated by Bike Recovery AI | {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+    """.strip()
 
 def generate_text_email(prediction_data):
     """Generate simple text email content"""
+    recovery_percentage = prediction_data.get('recovered_probability_percent', 
+                                              prediction_data.get('probability', {}).get('recovered', 0) * 100)
+    
+    prediction_text = 'LIKELY TO BE RECOVERED' if prediction_data.get('prediction') == 1 else 'UNLIKELY TO BE RECOVERED'
+    
+    advice_section = ""
+    if prediction_data.get('advice'):
+        advice_section = "\n\nPERSONALIZED RECOMMENDATIONS:\n" + "\n".join(f"• {advice}" for advice in prediction_data['advice'])
+    
     return f"""
-    Dear User,
-    
-    Your bike theft recovery prediction has been completed.
-    
-    Result: {'Your bike is likely to be recovered' if prediction_data['prediction'] == 1 else 'Your bike is unlikely to be recovered'}
-    Confidence: {prediction_data['probability']['recovered']:.1%}
-    
-    Personalized Advice:
-    {chr(10).join(f'- {advice}' for advice in prediction_data.get('advice', []))}
-    
-    Best regards,
-    Bike Theft Prediction Team
-    """
+🚴 BIKE THEFT RECOVERY PREDICTION RESULTS
+===============================================
+
+PREDICTION SUMMARY:
+• Status: {prediction_text}
+• Recovery Probability: {recovery_percentage:.1f}%
+• Model Version: {prediction_data.get('model_version', 'N/A').upper()}
+
+CONFIDENCE LEVEL:
+• Recovered: {recovery_percentage:.1f}%
+• Not Recovered: {100 - recovery_percentage:.1f}%
+{advice_section}
+
+IMPORTANT NOTES:
+• This prediction is based on historical Toronto Police Service data
+• Take immediate action regardless of the prediction
+• Always report theft to local police
+• Register your bike on recovery websites
+
+Generated by Bike Recovery AI
+Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+    """.strip()
 
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
