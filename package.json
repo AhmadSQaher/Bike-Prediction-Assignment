@@ -17,5 +17,8 @@
   },
   "keywords": ["bicycle", "theft", "prediction", "machine-learning", "flask", "react"],
   "author": "Group 4",
-  "license": "ISC"
+  "license": "ISC",
+  "engines": {
+    "node": "20.x"
+  }
 }
