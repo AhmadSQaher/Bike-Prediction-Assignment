@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -41,9 +41,39 @@ const InteractiveMap = () => {
   });
   const [availableYears, setAvailableYears] = useState([]);
 
+
+  const fetchTheftData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (filters.year !== 'all') params.append('year', filters.year);
+      if (filters.status !== 'all') params.append('status', filters.status);
+      params.append('limit', filters.limit);
+
+      const response = await fetch(`http://localhost:5000/api/theft-data?${params}`, {
+        credentials: 'include'
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setTheftData(data.theft_data);
+        // Extract unique years for filter dropdown
+        const years = [...new Set(data.theft_data.map(item => item.occ_year))].sort();
+        setAvailableYears(years);
+      } else {
+        const errorData = await response.json();
+        setError(errorData.error || 'Failed to load theft data');
+      }
+    } catch (error) {
+      setError('Network error. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  }, [filters]);
+
   useEffect(() => {
     fetchTheftData();
-  }, [filters]);
+  }, [fetchTheftData]);
 
   const fetchTheftData = async () => {
     setLoading(true);
