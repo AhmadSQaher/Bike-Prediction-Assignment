@@ -15,6 +15,9 @@
   "devDependencies": {
     "concurrently": "^8.2.2"
   },
+  "dependencies": {
+    "serve": "^14.2.0"
+  },
   "keywords": ["bicycle", "theft", "prediction", "machine-learning", "flask", "react"],
   "author": "Group 4",
   "license": "ISC",
