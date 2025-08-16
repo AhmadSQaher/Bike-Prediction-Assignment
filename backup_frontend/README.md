@@ -1,3 +1,7 @@
+#install requirements before running - python app.py for back end
+
+run pip install -r requirement.txt
+
 # Getting Started with Create React App
 
 This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
