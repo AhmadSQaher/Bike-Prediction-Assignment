@@ -1,0 +1,113 @@
+@startuml BikeSystemArchitecture
+title Bike Theft Prediction System - Software Architecture
+
+skinparam componentStyle rectangle
+skinparam backgroundColor white
+skinparam nodesep 15
+skinparam ranksep 25
+
+' NARROW VERTICAL LAYOUT - Single Column for Word Document Width
+' HARDWARE COMPONENTS
+node "Client Hardware" as CH
+component "Web Browser" as Browser
+component "React Frontend" as React
+node "Server Hardware" as SH  
+component "Flask API" as Flask
+component "Python Runtime" as Python
+component "Authentication" as Auth
+component "Session Manager" as Session
+component "Data Validator" as Validator
+component "File System" as FileSystem
+component "CatBoost Model v1" as ML1
+component "CatBoost Model v2" as ML2
+component "MongoDB Driver" as MongoDriver
+node "Database Hardware" as DH
+database "MongoDB Atlas" as MongoDB
+database "Local Storage" as LocalDB
+component "Gmail SMTP" as SMTP
+cloud "Gmail Cloud" as GmailCloud
+cloud "MongoDB Cloud" as MongoCloud
+
+' Force single column vertical layout
+CH -[hidden]down-> Browser
+Browser -[hidden]down-> React
+React -[hidden]down-> SH
+SH -[hidden]down-> Flask
+Flask -[hidden]down-> Python
+Python -[hidden]down-> Auth
+Auth -[hidden]down-> Session
+Session -[hidden]down-> Validator
+Validator -[hidden]down-> FileSystem
+FileSystem -[hidden]down-> ML1
+ML1 -[hidden]down-> ML2
+ML2 -[hidden]down-> MongoDriver
+MongoDriver -[hidden]down-> DH
+DH -[hidden]down-> MongoDB
+MongoDB -[hidden]down-> LocalDB
+LocalDB -[hidden]down-> SMTP
+SMTP -[hidden]down-> GmailCloud
+GmailCloud -[hidden]down-> MongoCloud
+
+' COMPREHENSIVE DATA FLOW WITH PROPER LABELS
+CH --> Browser : "1. User Access via HTTP/HTTPS"
+Browser --> React : "2. Load React Application"  
+React --> Flask : "3. JSON API Request"
+Flask --> Python : "4. Execute Python Code"
+Python --> Auth : "5. Authenticate User"
+Auth --> Session : "6. Create/Manage Session"
+Session --> Validator : "7. Validate Input Data"
+Validator --> ML1 : "8a. Process with CatBoost v1"
+Validator --> ML2 : "8b. Process with CatBoost v2"
+ML1 --> MongoDriver : "9a. Store ML Results v1"
+ML2 --> MongoDriver : "9b. Store ML Results v2"
+MongoDriver --> MongoDB : "10. Save to Cloud Database"
+MongoDriver --> LocalDB : "11. Cache Locally"
+MongoDB --> MongoCloud : "12. Cloud Synchronization"
+Flask --> SMTP : "13. Send Email Notification"
+SMTP --> GmailCloud : "14. Gmail Service Integration"
+Flask --> React : "15. Return JSON Response"
+React --> Browser : "16. Display Results to User"
+
+' SEPARATE DOCUMENTATION BOXES - NOT CONNECTED TO MAIN DIAGRAM
+note as HardwareDoc
+**HARDWARE COMPONENT INTERACTION:**
+Client Hardware: Desktop/laptop computers and mobile devices with network interfaces
+Server Hardware: Web servers with multi-core processors, adequate RAM for ML processing  
+Database Hardware: Storage systems with redundant drives, backup systems for data persistence
+end note
+
+note as SoftwareDoc
+**SOFTWARE COMPONENT COMMUNICATION:**  
+React Frontend: Sends JSON requests to Flask API endpoints, handles user interactions
+Flask API: 18 REST endpoints route requests, manage CORS, sessions, authentication
+CatBoost Models v1/v2: Process bike theft data using trained ML algorithms
+MongoDB Driver: Handles database connections, executes queries, manages data persistence
+Gmail SMTP: Sends email notifications using OAuth2 authentication over TLS encryption
+end note
+
+note as FlowDoc
+**COMPLETE DATA FLOW PROCESS (16 Steps):**
+1-2: User accesses system through web browser, React application loads
+3-4: Browser sends HTTP requests to Flask API, Python runtime executes logic
+5-6: System authenticates user credentials and creates/manages sessions
+7-8: Data validator processes input, CatBoost ML models predict recovery probability
+9-11: MongoDB Driver stores results in cloud database and local cache
+12-14: Data syncs with cloud services, email notifications sent via Gmail SMTP
+15-16: Flask returns JSON response to React frontend, results displayed to user
+end note
+
+legend bottom right
+**COMPREHENSIVE LEGEND:**
+Node = Hardware Component | Component = Software Module
+Database = Data Storage | Cloud = External Service  
+Arrow = Data Flow Direction | Numbers (1-16) = Processing Sequence
+
+**TECHNOLOGY STACK:**
+Frontend: React.js, HTML5, CSS3, JavaScript
+Backend: Python Flask, CatBoost ML, Authentication
+Database: MongoDB Atlas, Local File Storage  
+External: Gmail SMTP, OAuth2, TLS/HTTPS
+Hardware: Client devices, Web servers, Database servers
+end legend
+
+@enduml

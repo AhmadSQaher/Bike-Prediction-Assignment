@@ -4,7 +4,7 @@
   "description": "Bicycle theft prediction application with Flask backend and React frontend",
   "scripts": {
     "dev": "concurrently \"npm run backend\" \"npm run frontend\"",
-    "backend": "cd backend && python app.py",
+  "backend": "if exist backend\\.venv\\Scripts\\python.exe (cd backend && .venv\\Scripts\\python.exe app.py) else (cd backend && python app.py)",
     "frontend": "cd frontend && npm start",
     "install-backend": "cd backend && pip install -r requirements.txt",
     "install-frontend": "cd frontend && npm install",
