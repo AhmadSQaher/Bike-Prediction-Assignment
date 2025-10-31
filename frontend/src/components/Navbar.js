@@ -54,6 +54,10 @@ const Navbar = ({ user, setUser }) => {
                 <span className="nav-icon">👤</span>
                 Profile
               </Link>
+              <Link to="/history" className="nav-link">
+                <span className="nav-icon">📜</span>
+                My History
+              </Link>
             </>
           )}
           

@@ -277,6 +277,28 @@ body {
   }
 }
 
+/* History responsive tweaks */
+@media (max-width: 600px) {
+  .history-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .history-card-body {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .history-result {
+    width: 100%;
+    text-align: left;
+  }
+
+  .input-key {
+    flex: 0 0 120px;
+    white-space: normal;
+  }
+}
+
 /* Main Container */
 .main-container {
   flex: 1;
@@ -293,6 +315,87 @@ body {
   color: #333;
   box-shadow: 0 2px 5px rgba(0,0,0,0.1);
 }
+
+/* History page styles */
+.history-container {
+  max-width: 980px;
+  margin: 20px auto;
+  padding: 10px 16px;
+}
+
+.history-title {
+  margin-bottom: 12px;
+  color: #2b3a55;
+}
+
+.no-history {
+  color: #666;
+  padding: 20px;
+  background: #fff;
+  border-radius: 6px;
+  border: 1px solid #eee;
+}
+
+.history-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 14px;
+}
+
+.history-card {
+  background: linear-gradient(180deg,#ffffff 0%,#fbfdff 100%);
+  border: 1px solid #e6eef8;
+  padding: 12px;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(30,40,60,0.04);
+}
+
+.history-card-header {
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  margin-bottom:8px;
+}
+
+.history-timestamp {
+  font-size: 0.9rem;
+  color:#3b4a66;
+}
+
+.history-model {
+  font-size: 0.85rem;
+  color:#2b6cb0;
+}
+
+.history-card-body {
+  display:flex;
+  gap:12px;
+  align-items:flex-start;
+  flex-wrap: wrap; /* allow items to wrap on smaller widths */
+}
+
+.history-inputs { flex: 1; min-width: 0; }
+.inputs-list { border-left: 2px solid #f0f4f8; padding-left:10px; }
+.input-row { display:flex; gap:12px; padding:6px 0; align-items:center; }
+.input-key {
+  color:#657886;
+  flex: 0 0 220px; /* wider column for full label text */
+  min-width: 0;
+  font-weight:600;
+  text-transform:capitalize;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.input-val {
+  color:#222;
+  flex: 1 1 auto;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.history-result { width:110px; min-width:90px; text-align:center; }
+.prediction-percentage { font-size:1.45rem; font-weight:700; color:#1177cc; }
 
 .prediction-form h2 {
   margin-top: 0;

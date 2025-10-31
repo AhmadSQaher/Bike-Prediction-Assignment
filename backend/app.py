@@ -42,6 +42,7 @@ try:
     db = client[DB_NAME]
     users_collection = db.users
     tokens_collection = db.password_reset_tokens
+    predictions_collection = db.predictions
     print("Connected to MongoDB successfully!")
 except ConnectionFailure:
     print("Failed to connect to MongoDB. Falling back to in-memory storage.")
@@ -49,10 +50,12 @@ except ConnectionFailure:
     db = None
     users_collection = None
     tokens_collection = None
+    predictions_collection = None
 
 # Fallback to in-memory storage if MongoDB is not available
 users_db = {}
 password_reset_tokens = {}
+predictions_db = []
 
 # Email configuration (you can set these as environment variables)
 EMAIL_HOST = 'smtp.gmail.com'
@@ -196,6 +199,52 @@ def delete_reset_token(token):
         if token in password_reset_tokens:
             del password_reset_tokens[token]
         return True
+
+
+def save_prediction_record(user_email, model_version, input_data, recovered_probability_percent, raw_probability, prediction):
+    """Save a prediction record to MongoDB or in-memory fallback."""
+    record = {
+        'user_email': user_email,
+        'model_version': model_version,
+        'inputs': input_data,
+        'recovered_probability_percent': float(recovered_probability_percent),
+        'probability_raw': raw_probability,
+        'prediction': int(prediction),
+        'timestamp': datetime.now().isoformat()
+    }
+
+    if 'predictions_collection' in globals() and predictions_collection is not None:
+        try:
+            predictions_collection.insert_one(record)
+            return True
+        except Exception as e:
+            print(f"MongoDB error saving prediction record: {e}")
+            predictions_db.append(record)
+            return True
+    else:
+        predictions_db.append(record)
+        return True
+
+
+def get_user_history(email):
+    """Retrieve prediction history for a user, newest first."""
+    results = []
+    if 'predictions_collection' in globals() and predictions_collection is not None:
+        try:
+            cursor = predictions_collection.find({'user_email': email}).sort('timestamp', -1)
+            for doc in cursor:
+                if '_id' in doc:
+                    doc['_id'] = str(doc['_id'])
+                results.append(doc)
+            return results
+        except Exception as e:
+            print(f"MongoDB error fetching history: {e}")
+
+    # Fallback: filter in-memory list
+    for rec in sorted(predictions_db, key=lambda r: r.get('timestamp', ''), reverse=True):
+        if rec.get('user_email') == email:
+            results.append(rec)
+    return results
 
 def send_reset_email(email, reset_token, user_name="User"):
     """
@@ -422,6 +471,24 @@ def register():
         
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/history', methods=['GET'])
+def api_history():
+    """Return the authenticated user's prediction history (newest first)."""
+    try:
+        if 'user_email' not in session:
+            return jsonify({'error': 'Authentication required'}), 401
+
+        if session.get('user_role') == 'admin':
+            return jsonify({'error': 'Admins do not have a personal history page'}), 403
+
+        user_email = session['user_email']
+        history = get_user_history(user_email)
+        return jsonify({'history': history}), 200
+    except Exception as e:
+        print(f"Error fetching history: {e}")
+        return jsonify({'error': 'An error occurred while fetching history'}), 500
 
 @app.route("/api/login", methods=["POST"])
 def login():
@@ -1006,6 +1073,12 @@ def predict_v1():
         # Generate advice based on prediction
         advice = generate_advice(prediction, probability, data)
 
+        # Save prediction record (best-effort)
+        try:
+            save_prediction_record(session.get('user_email'), 'v1', data, prob_recovered_percent, probability.tolist(), prediction)
+        except Exception as e:
+            print(f"Warning: could not save prediction record: {e}")
+
         return jsonify({
             "prediction": int(prediction),
             "probability": {
@@ -1054,6 +1127,12 @@ def predict_v2():
 
         # Generate advice based on prediction
         advice = generate_advice(prediction, probability, data)
+
+        # Save prediction record (best-effort)
+        try:
+            save_prediction_record(session.get('user_email'), 'v2', data, prob_recovered_percent, probability.tolist(), prediction)
+        except Exception as e:
+            print(f"Warning: could not save prediction record: {e}")
 
         return jsonify({
             "prediction": int(prediction),
