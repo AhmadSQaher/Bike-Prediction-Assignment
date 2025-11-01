@@ -15,11 +15,71 @@ const Register = () => {
   const [success, setSuccess] = useState('');
   const navigate = useNavigate();
 
+  // Social signup modal state (simple/test-mode flow)
+  const [socialOpen, setSocialOpen] = useState(false);
+  const [socialProvider, setSocialProvider] = useState('');
+  const [socialName, setSocialName] = useState('');
+  const [socialEmail, setSocialEmail] = useState('');
+  const [socialLoading, setSocialLoading] = useState(false);
+  const [existingEmailModal, setExistingEmailModal] = useState({ open: false, email: '' });
+
   const handleChange = (e) => {
     setFormData({
       ...formData,
       [e.target.name]: e.target.value
     });
+  };
+
+  const handleSocialStart = (provider) => {
+    // In production this would redirect to the provider's OAuth flow.
+    // For dev/test we open a small modal to accept an email/name that will be used to create the account.
+    setSocialProvider(provider);
+    setSocialName('');
+    setSocialEmail('');
+    setSocialOpen(true);
+  };
+
+  const randomPassword = (len = 12) => {
+    const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()_+-=';
+    let out = '';
+    for (let i = 0; i < len; i++) out += chars[Math.floor(Math.random() * chars.length)];
+    return out;
+  };
+
+  const handleSocialSubmit = async (e) => {
+    e.preventDefault();
+    setSocialLoading(true);
+    setError('');
+    try {
+      // Create account using normal register endpoint with a random password (social accounts should be linked in production)
+      const res = await fetch('http://localhost:5000/api/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        // Dev/test flow: use a predictable default password for created social test accounts
+        body: JSON.stringify({ name: socialName || 'Social User', email: socialEmail, password: 'password', role: 'user' })
+      });
+      const d = await res.json().catch(()=>({}));
+      if (!res.ok) {
+        // If backend indicates email already exists, show modal linking to forgot password
+        const msg = (d.error || d.message || 'Social registration failed').toString();
+        const lower = msg.toLowerCase();
+        if (lower.includes('user already exists') || lower.includes('already exists') || (lower.includes('email') && lower.includes('exists'))) {
+          setExistingEmailModal({ open: true, email: socialEmail });
+        } else {
+          setError(msg);
+        }
+        setSocialLoading(false);
+        return;
+      }
+      setSocialOpen(false);
+      setSuccess(`Registered via ${socialProvider}. Please login to continue.`);
+      setTimeout(() => navigate('/login'), 1800);
+    } catch (err) {
+      setError('Network error during social signup');
+    } finally {
+      setSocialLoading(false);
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -64,7 +124,14 @@ const Register = () => {
           navigate('/login');
         }, 2000);
       } else {
-        setError(data.error || 'Registration failed');
+        // If email exists, show modal with link to forgot password page
+        const msg = (data.error || data.message || 'Registration failed').toString();
+        const lower = msg.toLowerCase();
+        if (lower.includes('user already exists') || lower.includes('already exists') || (lower.includes('email') && lower.includes('exists'))) {
+          setExistingEmailModal({ open: true, email: formData.email });
+        } else {
+          setError(msg);
+        }
       }
     } catch (error) {
       setError('Network error. Please try again.');
@@ -160,7 +227,45 @@ const Register = () => {
         <div style={{ marginTop: '15px', textAlign: 'center' }}>
           Already have an account? <Link to="/login" style={{ color: '#007bff', textDecoration: 'none' }}>Login here</Link>
         </div>
+        
+        <div style={{ marginTop: 20, textAlign: 'center' }}>
+          <div style={{ marginBottom: 8, color: '#555' }}>Or register with</div>
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+            <button type="button" className="btn-view" onClick={() => handleSocialStart('Google')}>Continue with Google</button>
+            <button type="button" className="btn-view" onClick={() => handleSocialStart('Facebook')}>Continue with Facebook</button>
+          </div>
+          <div style={{ marginTop: 8, color: '#999', fontSize: 12 }}>Note: social signup in this dev build uses a test flow. In production this will use real OAuth.</div>
+        </div>
       </form>
+
+      {socialOpen && (
+        <div className="modal-overlay" style={{ position: 'fixed', left:0, right:0, top:0, bottom:0, background:'rgba(0,0,0,0.4)', display:'flex', alignItems:'center', justifyContent:'center' }}>
+          <div style={{ background:'#fff', padding:20, borderRadius:8, width:360 }}>
+            <h3 style={{ marginTop:0 }}>Continue with {socialProvider} (test flow)</h3>
+            <p style={{ color:'#555' }}>Enter the email and name you want associated with this social account (dev-only flow).</p>
+            <form onSubmit={handleSocialSubmit}>
+              <input required placeholder="Full name" value={socialName} onChange={e=>setSocialName(e.target.value)} />
+              <input required type="email" placeholder="Email" value={socialEmail} onChange={e=>setSocialEmail(e.target.value)} />
+              <div style={{ display:'flex', gap:8, justifyContent:'flex-end', marginTop:12 }}>
+                <button type="button" className="btn-delete" onClick={() => setSocialOpen(false)}>Cancel</button>
+                <button type="submit" className="btn-primary" disabled={socialLoading}>{socialLoading ? 'Registering...' : `Register with ${socialProvider}`}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+          {existingEmailModal.open && (
+            <div className="modal-overlay" style={{ position: 'fixed', left:0, right:0, top:0, bottom:0, background:'rgba(0,0,0,0.4)', display:'flex', alignItems:'center', justifyContent:'center' }}>
+              <div style={{ background:'#fff', padding:20, borderRadius:8, width:360 }}>
+                <h3 style={{ marginTop:0 }}>Email already registered</h3>
+                <p style={{ color:'#555' }}>A user with that email ({existingEmailModal.email}) already exists. Did you <a href="/forgot-password" style={{ color:'#007bff', textDecoration:'underline' }}>forget your password?</a></p>
+                <div style={{ display:'flex', gap:8, justifyContent:'flex-end', marginTop:12 }}>
+                  <button type="button" className="btn-delete" onClick={() => setExistingEmailModal({ open:false, email: '' })}>Close</button>
+                </div>
+              </div>
+            </div>
+          )}
     </section>
   );
 };
