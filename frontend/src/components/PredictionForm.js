@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import Papa from 'papaparse';
 
 const loadMapping = async (filePath) => {
@@ -24,6 +24,7 @@ const loadMapping = async (filePath) => {
 
 const PredictionForm = ({ setResponse }) => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [modelVersion, setModelVersion] = useState("v1");
   const [showTips, setShowTips] = useState(false);
 
@@ -74,6 +75,34 @@ const PredictionForm = ({ setResponse }) => {
         .catch(err => console.error("Error loading neighbourhood 140 mapping:", err));
     }
   }, [modelVersion]);
+
+  // Prefill form if navigated with state (from History re-run)
+  useEffect(() => {
+    const prefill = location.state && location.state.prefill;
+    const prefModel = location.state && location.state.modelVersion;
+    if (prefModel) {
+      setModelVersion(prefModel);
+    }
+
+    if (prefill && prefModel) {
+      // Wait for modelVersion to be applied; use a small timeout to ensure mapping loads if needed
+      // We'll set form fields based on keys present in prefill
+      if (prefModel === 'v1') {
+        const newV1 = { ...formDataV1 };
+        Object.keys(newV1).forEach(k => {
+          if (prefill[k] !== undefined && prefill[k] !== null) newV1[k] = String(prefill[k]);
+        });
+        setFormDataV1(newV1);
+      } else {
+        const newV2 = { ...formDataV2 };
+        Object.keys(newV2).forEach(k => {
+          if (prefill[k] !== undefined && prefill[k] !== null) newV2[k] = String(prefill[k]);
+        });
+        setFormDataV2(newV2);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state]);
 
   // Form state for v1
   const [formDataV1, setFormDataV1] = useState({
