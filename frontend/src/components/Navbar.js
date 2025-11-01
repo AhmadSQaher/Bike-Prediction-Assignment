@@ -58,6 +58,10 @@ const Navbar = ({ user, setUser }) => {
                 <span className="nav-icon">📜</span>
                 My History
               </Link>
+              <Link to="/messages" className="nav-link">
+                <span className="nav-icon">✉️</span>
+                Messages
+              </Link>
             </>
           )}
           
@@ -70,6 +74,10 @@ const Navbar = ({ user, setUser }) => {
               <Link to="/admin/data" className="nav-link">
                 <span className="nav-icon">📊</span>
                 Data Upload
+              </Link>
+              <Link to="/admin/messages" className="nav-link">
+                <span className="nav-icon">✉️</span>
+                Messages
               </Link>
               <Link to="/profile" className="nav-link">
                 <span className="nav-icon">👤</span>

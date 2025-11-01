@@ -13,6 +13,8 @@ import Profile from './components/Profile';
 import History from './components/History';
 import UserManagement from './components/UserManagement';
 import DataUpload from './components/DataUpload';
+import Messages from './components/Messages';
+import AdminMessages from './components/AdminMessages';
 import About from './components/About';
 import References from './components/References';
 import Footer from './components/Footer';
@@ -76,7 +78,7 @@ function App() {
   const [user, setUser] = useState(null);
   const location = useLocation();
 
-  const hideStaticContent = ['/login', '/register', '/forgot-password', '/reset-password', '/predict', '/result', '/map', '/profile', '/history', '/admin/users', '/admin/data'].includes(location.pathname);
+  const hideStaticContent = ['/login', '/register', '/forgot-password', '/reset-password', '/predict', '/result', '/map', '/profile', '/history', '/messages', '/admin/messages', '/admin/users', '/admin/data'].includes(location.pathname);
 
   useEffect(() => {
     // Check authentication status on app load
@@ -138,6 +140,14 @@ function App() {
               </ProtectedUserRoute>
             }
           />
+          <Route
+            path="/messages"
+            element={
+              <ProtectedUserRoute>
+                <Messages />
+              </ProtectedUserRoute>
+            }
+          />
           
           {/* Protected Admin Routes */}
           <Route 
@@ -145,6 +155,14 @@ function App() {
             element={
               <ProtectedAdminRoute>
                 <UserManagement />
+              </ProtectedAdminRoute>
+            } 
+          />
+          <Route 
+            path="/admin/messages" 
+            element={
+              <ProtectedAdminRoute>
+                <AdminMessages />
               </ProtectedAdminRoute>
             } 
           />

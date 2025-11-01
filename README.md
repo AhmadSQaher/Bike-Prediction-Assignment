@@ -128,3 +128,7 @@ Both models predict the probability of bicycle theft recovery based on various f
 - Location data (division, neighborhood, premises type)
 - Temporal features (occurrence/report dates, day of week, month)
 - Incident details (primary offense, status)
+
+## Notes
+
+- Messaging: messaging for admin and user tickets has been implemented (admins can close tickets; users can delete closed tickets). Commit: "messaging done for admin and user tickets".

@@ -21,6 +21,8 @@ import io
 import base64
 from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure
+from bson.objectid import ObjectId
+import uuid
 
 # Define model file paths for v1 and v2
 MODEL_PATH_V1 = os.path.join('models', 'stolen_bike_recovery_prediction_model_v1.pkl')
@@ -43,6 +45,7 @@ try:
     users_collection = db.users
     tokens_collection = db.password_reset_tokens
     predictions_collection = db.predictions
+    messages_collection = db.messages
     print("Connected to MongoDB successfully!")
 except ConnectionFailure:
     print("Failed to connect to MongoDB. Falling back to in-memory storage.")
@@ -56,6 +59,7 @@ except ConnectionFailure:
 users_db = {}
 password_reset_tokens = {}
 predictions_db = []
+messages_db = []
 
 # Email configuration (you can set these as environment variables)
 EMAIL_HOST = 'smtp.gmail.com'
@@ -224,6 +228,109 @@ def save_prediction_record(user_email, model_version, input_data, recovered_prob
     else:
         predictions_db.append(record)
         return True
+
+
+def save_message(sender_email, recipient_admin_email, subject, body):
+    """Save a message sent by a user to a specific admin."""
+    msg = {
+        'sender_email': sender_email,
+        'recipient_admin': recipient_admin_email,
+        'subject': subject,
+        'body': body,
+    'reply': None,
+    'conversation': [],
+    'closed': False,
+    'closed_at': None,
+    'closed_by': None,
+        'timestamp': datetime.now().isoformat(),
+        'id': str(uuid.uuid4())
+    }
+    if 'messages_collection' in globals() and messages_collection is not None:
+        try:
+            res = messages_collection.insert_one(msg)
+            # convert _id to string for response
+            msg['_id'] = str(res.inserted_id)
+            return msg
+        except Exception as e:
+            print(f"MongoDB error saving message: {e}")
+            messages_db.append(msg)
+            return msg
+    else:
+        messages_db.append(msg)
+        return msg
+
+
+def get_messages_for_admin():
+    """Return all messages (newest first) for admin views (deprecated: use get_messages_for_admin_email)."""
+    return get_messages_for_admin_email(None)
+
+
+def get_messages_for_admin_email(admin_email):
+    """Return messages addressed to a specific admin (newest first). If admin_email is None, return all messages."""
+    results = []
+    if 'messages_collection' in globals() and messages_collection is not None:
+        try:
+            query = {}
+            if admin_email:
+                query['recipient_admin'] = admin_email
+            cursor = messages_collection.find(query).sort('timestamp', -1)
+            for doc in cursor:
+                if '_id' in doc:
+                    doc['_id'] = str(doc['_id'])
+                results.append(doc)
+            return results
+        except Exception as e:
+            print(f"MongoDB error fetching messages: {e}")
+
+    # fallback
+    for m in sorted(messages_db, key=lambda r: r.get('timestamp',''), reverse=True):
+        if admin_email is None or m.get('recipient_admin') == admin_email:
+            results.append(m)
+    return results
+
+
+def get_messages_for_user(email):
+    """Return messages for a specific user (newest first)."""
+    results = []
+    if 'messages_collection' in globals() and messages_collection is not None:
+        try:
+            cursor = messages_collection.find({'sender_email': email}).sort('timestamp', -1)
+            for doc in cursor:
+                if '_id' in doc:
+                    doc['_id'] = str(doc['_id'])
+                results.append(doc)
+            return results
+        except Exception as e:
+            print(f"MongoDB error fetching user messages: {e}")
+
+    for m in sorted(messages_db, key=lambda r: r.get('timestamp',''), reverse=True):
+        if m.get('sender_email') == email:
+            results.append(m)
+    return results
+
+
+def admin_reply_message(record_id, admin_email, reply_body):
+    """Admin replies to a message; update either MongoDB doc or in-memory message."""
+    entry = {'sender': 'admin', 'admin_email': admin_email, 'body': reply_body, 'timestamp': datetime.now().isoformat()}
+    if 'messages_collection' in globals() and messages_collection is not None:
+        try:
+            # try ObjectId
+            try:
+                obj = ObjectId(record_id)
+                res = messages_collection.update_one({'_id': obj}, {'$push': {'conversation': entry}, '$set': {'reply': entry}})
+            except Exception:
+                res = messages_collection.update_one({'id': record_id}, {'$push': {'conversation': entry}, '$set': {'reply': entry}})
+            return res.modified_count > 0
+        except Exception as e:
+            print(f"MongoDB error replying to message: {e}")
+
+    # fallback
+    for m in messages_db:
+        if (m.get('_id') and str(m.get('_id')) == record_id) or m.get('id') == record_id:
+            m.setdefault('conversation', []).append(entry)
+            m['reply'] = entry
+            return True
+    return False
 
 
 def get_user_history(email):
@@ -489,6 +596,347 @@ def api_history():
     except Exception as e:
         print(f"Error fetching history: {e}")
         return jsonify({'error': 'An error occurred while fetching history'}), 500
+
+
+@app.route('/api/history/<string:record_id>', methods=['DELETE'])
+def api_delete_history(record_id):
+    """Delete a history record for the authenticated user. Accepts either a MongoDB _id string or a timestamp string for in-memory records."""
+    try:
+        if 'user_email' not in session:
+            return jsonify({'error': 'Authentication required'}), 401
+
+        if session.get('user_role') == 'admin':
+            return jsonify({'error': 'Admins cannot delete user history'}), 403
+
+        user_email = session['user_email']
+
+        # Try MongoDB deletion first if collection available
+        if 'predictions_collection' in globals() and predictions_collection is not None:
+            try:
+                # Attempt to interpret record_id as ObjectId
+                try:
+                    obj = ObjectId(record_id)
+                    res = predictions_collection.delete_one({'_id': obj, 'user_email': user_email})
+                except Exception:
+                    # Not a valid ObjectId, try deleting by timestamp field
+                    res = predictions_collection.delete_one({'timestamp': record_id, 'user_email': user_email})
+
+                if res.deleted_count == 0:
+                    return jsonify({'error': 'Record not found or not owned by user'}), 404
+                return jsonify({'message': 'Deleted'}), 200
+            except Exception as e:
+                print(f"MongoDB error deleting history record: {e}")
+
+        # Fallback: in-memory deletion
+        removed = False
+        global predictions_db
+        new_list = []
+        for rec in predictions_db:
+            # compare by _id (unlikely in-memory) or timestamp
+            rec_id = str(rec.get('_id')) if rec.get('_id') else rec.get('timestamp')
+            if rec.get('user_email') == user_email and rec_id == record_id:
+                removed = True
+                continue
+            new_list.append(rec)
+
+        predictions_db = new_list
+        if removed:
+            return jsonify({'message': 'Deleted'}), 200
+
+        return jsonify({'error': 'Record not found'}), 404
+    except Exception as e:
+        print(f"Error deleting history: {e}")
+        return jsonify({'error': 'An error occurred while deleting history'}), 500
+
+
+@app.route('/api/messages', methods=['POST'])
+def api_send_message():
+    """Endpoint for a user to send a message to admins."""
+    try:
+        if 'user_email' not in session:
+            return jsonify({'error': 'Authentication required'}), 401
+
+        data = request.get_json() or {}
+        subject = data.get('subject', '').strip()
+        body = data.get('body', '').strip()
+        recipient = data.get('recipient_admin', '').strip()
+        if not subject or not body or not recipient:
+            return jsonify({'error': 'Recipient, subject and body are required'}), 400
+
+        # validate recipient exists and is admin
+        recipient_user = get_user(recipient)
+        if not recipient_user or recipient_user.get('role') != 'admin':
+            return jsonify({'error': 'Recipient must be a valid admin'}), 400
+
+        sender = session['user_email']
+        msg = save_message(sender, recipient, subject, body)
+        return jsonify({'message': 'Sent', 'data': msg}), 201
+    except Exception as e:
+        print(f"Error sending message: {e}")
+        return jsonify({'error': 'An error occurred sending message'}), 500
+
+
+@app.route('/api/messages', methods=['GET'])
+def api_get_messages():
+    """Return messages for admin (all) or for the authenticated user."""
+    try:
+        if 'user_email' not in session:
+            return jsonify({'error': 'Authentication required'}), 401
+
+        user_email = session['user_email']
+        role = session.get('user_role')
+
+        if role == 'admin':
+            msgs = get_messages_for_admin_email(user_email)
+            return jsonify({'messages': msgs}), 200
+        else:
+            msgs = get_messages_for_user(user_email)
+            return jsonify({'messages': msgs}), 200
+    except Exception as e:
+        print(f"Error fetching messages: {e}")
+        return jsonify({'error': 'An error occurred while fetching messages'}), 500
+
+
+@app.route('/api/messages/<string:record_id>/reply', methods=['POST'])
+def api_reply_message(record_id):
+    """Reply to a message. Admins and the original sender are allowed to reply (with permission checks)."""
+    try:
+        if 'user_email' not in session:
+            return jsonify({'error': 'Authentication required'}), 401
+
+        data = request.get_json() or {}
+        reply_body = data.get('body', '').strip()
+        if not reply_body:
+            return jsonify({'error': 'Reply body is required'}), 400
+
+        role = session.get('user_role')
+        user_email = session.get('user_email')
+
+        # locate target message
+        target = None
+        if 'messages_collection' in globals() and messages_collection is not None:
+            try:
+                try:
+                    obj = ObjectId(record_id)
+                    target = messages_collection.find_one({'_id': obj})
+                except Exception:
+                    target = messages_collection.find_one({'id': record_id})
+            except Exception:
+                target = None
+        else:
+            for m in messages_db:
+                if (m.get('_id') and str(m.get('_id')) == record_id) or m.get('id') == record_id:
+                    target = m
+
+        if not target:
+            return jsonify({'error': 'Message not found'}), 404
+
+        # If the ticket is closed, no one can reply
+        if target.get('closed'):
+            return jsonify({'error': 'This ticket has been closed and cannot be replied to'}), 403
+
+        # If admin: ensure they are recipient
+        if role == 'admin':
+            if target.get('recipient_admin') != user_email:
+                return jsonify({'error': 'Message not addressed to you'}), 403
+            ok = admin_reply_message(record_id, user_email, reply_body)
+            if not ok:
+                return jsonify({'error': 'Failed to save reply'}), 500
+            return jsonify({'message': 'Replied'}), 200
+
+        # If user: ensure they are the original sender
+        if role == 'user':
+            if target.get('sender_email') != user_email:
+                return jsonify({'error': 'Not authorized to reply to this message'}), 403
+            # append user reply to conversation
+            entry = {'sender': 'user', 'user_email': user_email, 'body': reply_body, 'timestamp': datetime.now().isoformat()}
+            if 'messages_collection' in globals() and messages_collection is not None:
+                try:
+                    try:
+                        obj = ObjectId(record_id)
+                        res = messages_collection.update_one({'_id': obj}, {'$push': {'conversation': entry}})
+                    except Exception:
+                        res = messages_collection.update_one({'id': record_id}, {'$push': {'conversation': entry}})
+                    if res.modified_count == 0:
+                        return jsonify({'error': 'Message not found'}), 404
+                    return jsonify({'message': 'Replied'}), 200
+                except Exception as e:
+                    print(f"MongoDB error saving user reply: {e}")
+                    return jsonify({'error': 'Failed to save reply'}), 500
+            # fallback in-memory
+            for m in messages_db:
+                if (m.get('_id') and str(m.get('_id')) == record_id) or m.get('id') == record_id:
+                    m.setdefault('conversation', []).append(entry)
+                    return jsonify({'message': 'Replied'}), 200
+            return jsonify({'error': 'Message not found'}), 404
+
+        return jsonify({'error': 'Invalid role for replying'}), 403
+    except Exception as e:
+        print(f"Error replying to message: {e}")
+        return jsonify({'error': 'An error occurred while replying'}), 500
+
+
+@app.route('/api/messages/<string:record_id>', methods=['DELETE'])
+def api_delete_message(record_id):
+    """Admin deletes a message."""
+    try:
+        if 'user_email' not in session:
+            return jsonify({'error': 'Authentication required'}), 401
+        role = session.get('user_role')
+        user_email = session.get('user_email')
+
+        # Admins can delete messages addressed to them; users can delete their own message only if it's closed
+        if role not in ['admin', 'user']:
+            return jsonify({'error': 'Invalid role'}), 403
+
+        # Try Mongo delete
+        if 'messages_collection' in globals() and messages_collection is not None:
+            try:
+                try:
+                    obj = ObjectId(record_id)
+                    target = messages_collection.find_one({'_id': obj})
+                except Exception:
+                    target = messages_collection.find_one({'id': record_id})
+
+                if not target:
+                    return jsonify({'error': 'Message not found'}), 404
+
+                # Admin deletion
+                if role == 'admin':
+                    if target.get('recipient_admin') != user_email:
+                        return jsonify({'error': 'Message not addressed to you'}), 403
+                    # proceed to delete
+                    try:
+                        try:
+                            obj = ObjectId(record_id)
+                            res = messages_collection.delete_one({'_id': obj, 'recipient_admin': user_email})
+                        except Exception:
+                            res = messages_collection.delete_one({'id': record_id, 'recipient_admin': user_email})
+                        if res.deleted_count == 0:
+                            return jsonify({'error': 'Message not found'}), 404
+                        return jsonify({'message': 'Deleted'}), 200
+                    except Exception as e:
+                        print(f"MongoDB error deleting message: {e}")
+
+                # User deletion only allowed if they are sender and message is closed
+                if role == 'user':
+                    if target.get('sender_email') != user_email:
+                        return jsonify({'error': 'Not authorized to delete this message'}), 403
+                    if not target.get('closed'):
+                        return jsonify({'error': 'Message must be closed by admin before deletion'},), 403
+                    try:
+                        try:
+                            obj = ObjectId(record_id)
+                            res = messages_collection.delete_one({'_id': obj, 'sender_email': user_email})
+                        except Exception:
+                            res = messages_collection.delete_one({'id': record_id, 'sender_email': user_email})
+                        if res.deleted_count == 0:
+                            return jsonify({'error': 'Message not found'}), 404
+                        return jsonify({'message': 'Deleted'}), 200
+                    except Exception as e:
+                        print(f"MongoDB error deleting message: {e}")
+            except Exception as e:
+                print(f"MongoDB error during delete flow: {e}")
+
+        # fallback in-memory
+        global messages_db
+        target = None
+        for m in messages_db:
+            if (m.get('_id') and str(m.get('_id')) == record_id) or m.get('id') == record_id:
+                target = m
+                break
+        if not target:
+            return jsonify({'error': 'Message not found'}), 404
+
+        if role == 'admin':
+            if target.get('recipient_admin') != user_email:
+                return jsonify({'error': 'Message not addressed to you'}), 403
+            messages_db = [m for m in messages_db if not ((m.get('_id') and str(m.get('_id')) == record_id) or m.get('id') == record_id)]
+            return jsonify({'message': 'Deleted'}), 200
+
+        if role == 'user':
+            if target.get('sender_email') != user_email:
+                return jsonify({'error': 'Not authorized to delete this message'}), 403
+            if not target.get('closed'):
+                return jsonify({'error': 'Message must be closed by admin before deletion'}), 403
+            messages_db = [m for m in messages_db if not ((m.get('_id') and str(m.get('_id')) == record_id) or m.get('id') == record_id)]
+            return jsonify({'message': 'Deleted'}), 200
+    except Exception as e:
+        print(f"Error deleting message: {e}")
+        return jsonify({'error': 'An error occurred while deleting message'}), 500
+
+
+@app.route('/api/messages/<string:record_id>/close', methods=['POST'])
+def api_close_message(record_id):
+    """Admin closes a message/ticket so no further replies are allowed."""
+    try:
+        if 'user_email' not in session:
+            return jsonify({'error': 'Authentication required'}), 401
+        if session.get('user_role') != 'admin':
+            return jsonify({'error': 'Only admins can close tickets'}), 403
+
+        admin_email = session.get('user_email')
+
+        # Try Mongo update
+        if 'messages_collection' in globals() and messages_collection is not None:
+            try:
+                try:
+                    obj = ObjectId(record_id)
+                    target = messages_collection.find_one({'_id': obj})
+                except Exception:
+                    target = messages_collection.find_one({'id': record_id})
+
+                if not target:
+                    return jsonify({'error': 'Message not found'}), 404
+
+                if target.get('recipient_admin') != admin_email:
+                    return jsonify({'error': 'Message not addressed to you'}), 403
+
+                update = {'$set': {'closed': True, 'closed_at': datetime.now().isoformat(), 'closed_by': admin_email}}
+                try:
+                    try:
+                        obj = ObjectId(record_id)
+                        res = messages_collection.update_one({'_id': obj}, update)
+                    except Exception:
+                        res = messages_collection.update_one({'id': record_id}, update)
+                    if res.modified_count == 0:
+                        return jsonify({'error': 'Failed to close message'}), 500
+                    return jsonify({'message': 'Closed'}), 200
+                except Exception as e:
+                    print(f"MongoDB error closing message: {e}")
+            except Exception as e:
+                print(f"MongoDB error during close flow: {e}")
+
+        # fallback in-memory
+        global messages_db
+        for m in messages_db:
+            if (m.get('_id') and str(m.get('_id')) == record_id) or m.get('id') == record_id:
+                if m.get('recipient_admin') != admin_email:
+                    return jsonify({'error': 'Message not addressed to you'}), 403
+                m['closed'] = True
+                m['closed_at'] = datetime.now().isoformat()
+                m['closed_by'] = admin_email
+                return jsonify({'message': 'Closed'}), 200
+
+        return jsonify({'error': 'Message not found'}), 404
+    except Exception as e:
+        print(f"Error closing message: {e}")
+        return jsonify({'error': 'An error occurred while closing message'}), 500
+
+
+@app.route('/api/admins', methods=['GET'])
+def api_get_admins():
+    """Return a list of admin users (email, name)."""
+    try:
+        # reuse get_all_users which returns all users; filter admins
+        users = get_all_users()
+        admins = [u for u in users if u.get('role') == 'admin']
+        # return minimal info
+        admins_simple = [{'email': u.get('email'), 'name': u.get('name')} for u in admins]
+        return jsonify({'admins': admins_simple}), 200
+    except Exception as e:
+        print(f"Error fetching admins: {e}")
+        return jsonify({'error': 'Could not fetch admins'}), 500
 
 @app.route("/api/login", methods=["POST"])
 def login():
