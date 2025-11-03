@@ -1,21 +1,15 @@
-#!/usr/bin/env python3
-"""
-Script to initialize an admin user in MongoDB
-Run this script to create the first admin user for your application
-"""
+#Script to initialize an admin user in MongoDB
 
 from pymongo import MongoClient
 from werkzeug.security import generate_password_hash
 from datetime import datetime
 import getpass
 
-# MongoDB configuration
 MONGO_URI = "mongodb+srv://sqaher:LR3iKYVjY3yQqdPt@centennialcollegecluste.rkaeskw.mongodb.net/"
 DB_NAME = "bike_recovery_ai"
 
 def create_admin_user():
     try:
-        # Connect to MongoDB
         client = MongoClient(MONGO_URI)
         db = client[DB_NAME]
         users_collection = db.users
@@ -23,7 +17,6 @@ def create_admin_user():
         print("🚴 Bike Recovery AI - Admin User Setup")
         print("=" * 40)
         
-        # Get admin user details
         email = input("Enter admin email: ").strip()
         if not email:
             print("❌ Email is required!")

@@ -20,10 +20,22 @@ from unittest.mock import patch, MagicMock
 import sys
 import os
 
-# Add the backend directory to Python path for imports
 sys.path.insert(0, os.path.dirname(__file__))
 
-# Try to import pytest, but make it optional
+try:
+    import app as _app_check 
+except Exception:
+    import importlib.util
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    app_path = os.path.join(current_dir, 'app.py')
+    if os.path.exists(app_path):
+        spec = importlib.util.spec_from_file_location('app', app_path)
+        app = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(app)
+        sys.modules['app'] = app
+    else:
+        pass
+
 try:
     import pytest
     PYTEST_AVAILABLE = True
@@ -50,15 +62,11 @@ class TestBikeRecoveryApp:
     def test_get_user(self):
         """Test 1: User retrieval from MongoDB"""
         with patch('app.users_collection') as mock_collection:
-            # Arrange
             mock_collection.find_one.return_value = self.sample_user
-            
+
             from app import get_user
-            
-            # Act
+
             result = get_user('test@example.com')
-            
-            # Assert
             assert result == self.sample_user
             mock_collection.find_one.assert_called_once_with({'email': 'test@example.com'})
             print("✅ TEST 1 PASSED: get_user() successfully retrieves user from database")
@@ -69,16 +77,12 @@ class TestBikeRecoveryApp:
         """Test 2: User creation in MongoDB"""
         with patch('app.users_collection') as mock_collection, \
              patch('app.generate_password_hash') as mock_hash:
-            # Arrange
             mock_hash.return_value = 'hashed_password'
             mock_collection.insert_one.return_value = MagicMock()
             
             from app import create_user
-            
-            # Act
+
             result = create_user('new@example.com', 'password123', 'New User', 'user')
-            
-            # Assert
             assert result is True
             mock_collection.insert_one.assert_called_once()
             call_args = mock_collection.insert_one.call_args[0][0]
@@ -92,17 +96,13 @@ class TestBikeRecoveryApp:
     
     def test_generate_advice(self):
         """Test 3: Prediction advice generation"""
+
         from app import generate_advice
-        
-        # Arrange
+
         prediction = 1
-        probability = [0.2, 0.8]  # 80% recovery chance (high probability)
+        probability = [0.2, 0.8]
         input_data = {'DIVISION': 1, 'OCC_DOW': 3, 'BIKE_TYPE': 2}
-        
-        # Act
         advice = generate_advice(prediction, probability, input_data)
-        
-        # Assert
         assert isinstance(advice, list)
         assert len(advice) > 0
         assert any('High recovery probability' in item for item in advice)
@@ -114,16 +114,12 @@ class TestBikeRecoveryApp:
     def test_update_user(self):
         """Test 4: User profile update in MongoDB"""
         with patch('app.users_collection') as mock_collection:
-            # Arrange
             mock_collection.update_one.return_value = MagicMock()
             updates = {'name': 'Updated Name', 'role': 'admin'}
-            
+
             from app import update_user
-            
-            # Act
+
             result = update_user('test@example.com', updates)
-            
-            # Assert
             assert result is True
             mock_collection.update_one.assert_called_once_with(
                 {'email': 'test@example.com'}, 
@@ -137,16 +133,12 @@ class TestBikeRecoveryApp:
         """Test 5: Password reset email sending"""
         with patch('app.smtplib.SMTP') as mock_smtp, \
              patch('app.MIMEMultipart') as mock_mime:
-            # Arrange
             mock_server = MagicMock()
             mock_smtp.return_value = mock_server
             
             from app import send_reset_email
-            
-            # Act
+
             result = send_reset_email('test@example.com', 'reset_token_123', 'Test User')
-            
-            # Assert
             assert result is True
             mock_server.starttls.assert_called_once()
             mock_server.login.assert_called_once()
@@ -159,7 +151,6 @@ class TestBikeRecoveryApp:
 
 if __name__ == '__main__':
 
-    # Run the 5 unit tests directly Use: python test_bike_recovery_app.py
     print("🚴 Bike Recovery AI - 5 Essential Unit Tests")
     print("=" * 60)
     print("Testing exactly 5 core functions:")
@@ -170,7 +161,6 @@ if __name__ == '__main__':
     print("5. send_reset_email() - Password reset emails")
     print("=" * 60)
     
-    # Run with pytest if available
     if PYTEST_AVAILABLE:
         try:
             import pytest
@@ -182,8 +172,7 @@ if __name__ == '__main__':
     
     if not PYTEST_AVAILABLE:
         print("✅ Running tests manually (pytest not available)...")
-        
-        # Create test instance and run manually
+    
         test_instance = TestBikeRecoveryApp()
         test_instance.setup_method()
         
@@ -191,7 +180,6 @@ if __name__ == '__main__':
         total_tests = 5
         
         try:
-            # Run each test manually
             test_instance.test_get_user()
             tests_passed += 1
             
