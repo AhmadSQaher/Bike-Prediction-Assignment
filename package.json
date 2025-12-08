@@ -4,13 +4,13 @@
   "description": "Bicycle theft prediction application with Flask backend and React frontend",
   "scripts": {
     "dev": "concurrently \"npm run backend\" \"npm run frontend\"",
-  "backend": "if exist backend\\.venv\\Scripts\\python.exe (cd backend && .venv\\Scripts\\python.exe app.py) else (cd backend && python app.py)",
+    "backend": "if exist backend\\.venv\\Scripts\\python.exe (cd backend && .venv\\Scripts\\python.exe app.py) else (cd backend && python app.py)",
     "frontend": "cd frontend && npm start",
     "install-backend": "cd backend && pip install -r requirements.txt",
     "install-frontend": "cd frontend && npm install",
     "install-all": "concurrently \"npm run install-backend\" \"npm run install-frontend\"",
-  "build": "cd frontend && npm run build",
-  "vercel-build": "cd frontend && npm install && npm run build"
+    "build": "cd frontend && npm run build",
+    "vercel-build": "cd frontend && npm install && npm run build"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"
@@ -18,7 +18,14 @@
   "dependencies": {
     "serve": "^14.2.0"
   },
-  "keywords": ["bicycle", "theft", "prediction", "machine-learning", "flask", "react"],
+  "keywords": [
+    "bicycle",
+    "theft",
+    "prediction",
+    "machine-learning",
+    "flask",
+    "react"
+  ],
   "author": "Group 4",
   "license": "ISC",
   "engines": {

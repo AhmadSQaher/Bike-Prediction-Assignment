@@ -1,3 +1,9 @@
+# Add after existing imports
+from validation import (
+    validate_email, validate_password, validate_name, validate_role,
+    validate_prediction_input, validate_message_input, validate_reply_input,
+    validate_profile_update
+)
 import os
 import pickle
 import pandas as pd
@@ -550,22 +556,48 @@ def index():
 def register():
     try:
         data = request.get_json()
-        email = data.get('email')
-        password = data.get('password')
-        name = data.get('name', '')
-        role = data.get('role', 'user')  # Default to user if not specified
         
-        if not email or not password:
-            return jsonify({"error": "Email and password are required"}), 400
+        # Validate input
+        errors = {}
         
-        # Validate role
-        if role not in ['user', 'admin']:
-            return jsonify({"error": "Invalid role. Must be 'user' or 'admin'"}), 400
+        # Email validation
+        try:
+            email = validate_email(data.get('email', ''))
+        except ValidationError as e:
+            errors[e.field] = e.message
+        
+        # Password validation
+        try:
+            password = validate_password(data.get('password', ''))
+        except ValidationError as e:
+            errors[e.field] = e.message
+        
+        # Name validation (optional)
+        try:
+            name = validate_name(data.get('name', ''))
+        except ValidationError as e:
+            errors[e.field] = e.message
+        
+        # Role validation
+        try:
+            role = validate_role(data.get('role', 'user'))
+        except ValidationError as e:
+            errors[e.field] = e.message
+        
+        # Return validation errors if any
+        if errors:
+            return jsonify({
+                "error": "Validation failed",
+                "details": errors
+            }), 400
         
         # Check if user already exists
         existing_user = get_user(email)
         if existing_user:
-            return jsonify({"error": "User already exists"}), 400
+            return jsonify({
+                "error": "User already exists",
+                "details": {"email": "This email is already registered"}
+            }), 400
         
         # Create user
         if create_user(email, password, name, role):
@@ -578,7 +610,6 @@ def register():
         
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
 
 @app.route('/api/history', methods=['GET'])
 def api_history():
@@ -657,58 +688,50 @@ def api_send_message():
             return jsonify({'error': 'Authentication required'}), 401
 
         data = request.get_json() or {}
-        subject = data.get('subject', '').strip()
-        body = data.get('body', '').strip()
-        recipient = data.get('recipient_admin', '').strip()
-        if not subject or not body or not recipient:
-            return jsonify({'error': 'Recipient, subject and body are required'}), 400
+        
+        # Validate input
+        validated_data, errors = validate_message_input(data)
+        
+        if errors:
+            return jsonify({
+                'error': 'Invalid message data',
+                'details': errors
+            }), 400
 
-        # validate recipient exists and is admin
-        recipient_user = get_user(recipient)
+        # Validate recipient exists and is admin
+        recipient_user = get_user(validated_data['recipient_admin'])
         if not recipient_user or recipient_user.get('role') != 'admin':
-            return jsonify({'error': 'Recipient must be a valid admin'}), 400
+            return jsonify({
+                'error': 'Invalid recipient',
+                'details': {'recipient_admin': 'Recipient must be a valid admin'}
+            }), 400
 
         sender = session['user_email']
-        msg = save_message(sender, recipient, subject, body)
+        msg = save_message(sender, validated_data['recipient_admin'], 
+                          validated_data['subject'], validated_data['body'])
         return jsonify({'message': 'Sent', 'data': msg}), 201
     except Exception as e:
         print(f"Error sending message: {e}")
         return jsonify({'error': 'An error occurred sending message'}), 500
 
-
-@app.route('/api/messages', methods=['GET'])
-def api_get_messages():
-    """Return messages for admin (all) or for the authenticated user."""
-    try:
-        if 'user_email' not in session:
-            return jsonify({'error': 'Authentication required'}), 401
-
-        user_email = session['user_email']
-        role = session.get('user_role')
-
-        if role == 'admin':
-            msgs = get_messages_for_admin_email(user_email)
-            return jsonify({'messages': msgs}), 200
-        else:
-            msgs = get_messages_for_user(user_email)
-            return jsonify({'messages': msgs}), 200
-    except Exception as e:
-        print(f"Error fetching messages: {e}")
-        return jsonify({'error': 'An error occurred while fetching messages'}), 500
-
-
 @app.route('/api/messages/<string:record_id>/reply', methods=['POST'])
 def api_reply_message(record_id):
-    """Reply to a message. Admins and the original sender are allowed to reply (with permission checks)."""
+    """Reply to a message."""
     try:
         if 'user_email' not in session:
             return jsonify({'error': 'Authentication required'}), 401
 
         data = request.get_json() or {}
-        reply_body = data.get('body', '').strip()
-        if not reply_body:
-            return jsonify({'error': 'Reply body is required'}), 400
+        
+        # Validate reply input
+        validated_data, errors = validate_reply_input(data)
+        if errors:
+            return jsonify({
+                'error': 'Invalid reply data',
+                'details': errors
+            }), 400
 
+        reply_body = validated_data['body']
         role = session.get('user_role')
         user_email = session.get('user_email')
 
@@ -775,6 +798,25 @@ def api_reply_message(record_id):
         print(f"Error replying to message: {e}")
         return jsonify({'error': 'An error occurred while replying'}), 500
 
+@app.route('/api/messages', methods=['GET'])
+def api_get_messages():
+    """Return messages for admin (all) or for the authenticated user."""
+    try:
+        if 'user_email' not in session:
+            return jsonify({'error': 'Authentication required'}), 401
+
+        user_email = session['user_email']
+        role = session.get('user_role')
+
+        if role == 'admin':
+            msgs = get_messages_for_admin_email(user_email)
+            return jsonify({'messages': msgs}), 200
+        else:
+            msgs = get_messages_for_user(user_email)
+            return jsonify({'messages': msgs}), 200
+    except Exception as e:
+        print(f"Error fetching messages: {e}")
+        return jsonify({'error': 'An error occurred while fetching messages'}), 500
 
 @app.route('/api/messages/<string:record_id>', methods=['DELETE'])
 def api_delete_message(record_id):
@@ -865,8 +907,6 @@ def api_delete_message(record_id):
         print(f"Error deleting message: {e}")
         return jsonify({'error': 'An error occurred while deleting message'}), 500
 
-
-@app.route('/api/messages/<string:record_id>/close', methods=['POST'])
 def api_close_message(record_id):
     """Admin closes a message/ticket so no further replies are allowed."""
     try:
@@ -1502,15 +1542,18 @@ def predict_v1():
             return jsonify({"error": "Admin users cannot generate predictions"}), 403
         
         data = request.get_json()
-
+        
         # Validate input for v1 model
-        missing_features = [feat for feat in features_v1 if feat not in data]
-        if missing_features:
-            return jsonify({"error": f"Missing features for v1: {missing_features}"}), 400
+        validated_data, errors = validate_prediction_input(data, 'v1', features_v1)
+        
+        if errors:
+            return jsonify({
+                "error": "Invalid input data",
+                "details": errors
+            }), 400
 
         # Convert input values to float
-        input_row = {feat: float(data[feat]) for feat in features_v1}
-        X = pd.DataFrame([input_row], columns=features_v1)
+        X = pd.DataFrame([validated_data], columns=features_v1)
 
         # Predict probability for RECOVERED using model v1
         prediction = model_v1.predict(X)[0]
