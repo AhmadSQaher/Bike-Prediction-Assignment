@@ -1,6 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import Papa from 'papaparse';
+import { 
+  validatePredictionInput, 
+  displayApiErrors, 
+  formatValidationError 
+} from '../utils/validation';
 
 const loadMapping = async (filePath) => {
   const response = await fetch(filePath);
@@ -27,6 +32,8 @@ const PredictionForm = ({ setResponse }) => {
   const location = useLocation();
   const [modelVersion, setModelVersion] = useState("v1");
   const [showTips, setShowTips] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState({});
+  const [generalError, setGeneralError] = useState('');
 
   // Common mapping for both models
   const [primaryOffenceOptions, setPrimaryOffenceOptions] = useState([]);
@@ -74,6 +81,10 @@ const PredictionForm = ({ setResponse }) => {
         .then(data => setNeighbourhood140Options(data))
         .catch(err => console.error("Error loading neighbourhood 140 mapping:", err));
     }
+    
+    // Clear errors when model version changes
+    setFieldErrors({});
+    setGeneralError('');
   }, [modelVersion]);
 
   // Prefill form if navigated with state (from History re-run)
@@ -135,37 +146,75 @@ const PredictionForm = ({ setResponse }) => {
   const handleModelVersionChange = (e) => {
     setModelVersion(e.target.value);
     setResponse(null);
+    setFieldErrors({});
+    setGeneralError('');
   };
 
   const handleChangeV1 = (e) => {
     const { name, value } = e.target;
     setFormDataV1(prev => ({ ...prev, [name]: value }));
+    
+    // Clear field error when user starts typing
+    if (fieldErrors[name]) {
+      const newErrors = { ...fieldErrors };
+      delete newErrors[name];
+      setFieldErrors(newErrors);
+    }
+    
+    // Clear general error
+    if (generalError) {
+      setGeneralError('');
+    }
   };
 
   const handleChangeV2 = (e) => {
     const { name, value } = e.target;
     setFormDataV2(prev => ({ ...prev, [name]: value }));
+    
+    // Clear field error when user starts typing
+    if (fieldErrors[name]) {
+      const newErrors = { ...fieldErrors };
+      delete newErrors[name];
+      setFieldErrors(newErrors);
+    }
+    
+    // Clear general error
+    if (generalError) {
+      setGeneralError('');
+    }
+  };
+
+  const validateForm = () => {
+    const currentFormData = modelVersion === "v1" ? formDataV1 : formDataV2;
+    const errors = validatePredictionInput(currentFormData, modelVersion);
+    setFieldErrors(errors);
+    
+    // Also check for empty fields
+    const emptyFields = Object.keys(currentFormData).filter(key => !currentFormData[key]);
+    if (emptyFields.length > 0 && Object.keys(errors).length === 0) {
+      emptyFields.forEach(field => {
+        errors[field] = `${field.replace(/_/g, ' ')} is required`;
+      });
+      setFieldErrors(errors);
+    }
+    
+    return Object.keys(errors).length === 0;
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setGeneralError('');
+    
+    // Client-side validation
+    if (!validateForm()) {
+      return;
+    }
+    
     let payload = { modelVersion };
 
     if (modelVersion === "v1") {
-      for (let key in formDataV1) {
-        if (!formDataV1[key]) {
-          setResponse({ error: `Please fill out field: ${key}` });
-          return;
-        }
-      }
       payload = { ...payload, ...formDataV1 };
     } else {
-      for (let key in formDataV2) {
-        if (!formDataV2[key]) {
-          setResponse({ error: `Please fill out field: ${key}` });
-          return;
-        }
-      }
       payload = { ...payload, ...formDataV2 };
     }
 
@@ -180,22 +229,38 @@ const PredictionForm = ({ setResponse }) => {
       
       if (res.status === 401) {
         // User not authenticated
-        setResponse({ error: 'Please log in to make predictions.' });
+        setGeneralError('Please log in to make predictions.');
         navigate('/login');
         return;
       }
       
       if (res.status === 403) {
         // Admin users forbidden
-        setResponse({ error: 'Admin users cannot generate predictions.' });
+        setGeneralError('Admin users cannot generate predictions.');
+        return;
+      }
+      
+      if (res.status === 400) {
+        // Validation error from server
+        displayApiErrors(data, setFieldError, setGeneralError);
+        return;
+      }
+      
+      if (!res.ok) {
+        setGeneralError(formatValidationError(data));
         return;
       }
       
       setResponse(data);
       navigate('/result');
     } catch (error) {
-      setResponse({ error: 'Error connecting to server.' });
+      setGeneralError('Network error. Please try again.');
     }
+  };
+
+  // Helper function to set field errors
+  const setFieldError = (field, message) => {
+    setFieldErrors(prev => ({ ...prev, [field]: message }));
   };
 
   const handleClear = () => {
@@ -227,11 +292,72 @@ const PredictionForm = ({ setResponse }) => {
       });
     }
     setResponse(null);
+    setFieldErrors({});
+    setGeneralError('');
+  };
+
+  // Function to render field with error styling
+  const renderField = (name, value, onChange, type = 'select', options = [], placeholder = '') => {
+    const error = fieldErrors[name];
+    
+    return (
+      <div className="form-group">
+        <label>{name.replace(/_/g, ' ')}:</label>
+        {type === 'select' ? (
+          <select 
+            name={name} 
+            value={value} 
+            onChange={onChange}
+            className={error ? 'error-field' : ''}
+            style={error ? { border: '2px solid red' } : {}}
+          >
+            <option value="">Select {name.replace(/_/g, ' ')}</option>
+            {options.map(opt => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+        ) : (
+          <input 
+            type="number" 
+            name={name} 
+            placeholder={placeholder}
+            value={value} 
+            onChange={onChange}
+            className={error ? 'error-field' : ''}
+            style={error ? { border: '2px solid red' } : {}}
+          />
+        )}
+        {error && (
+          <div className="field-error" style={{ 
+            color: 'red', 
+            fontSize: '14px', 
+            marginTop: '5px' 
+          }}>
+            {error}
+          </div>
+        )}
+      </div>
+    );
   };
 
   return (
     <div className="prediction-form">
       <h2>Enter Bicycle Theft Details</h2>
+      
+      {/* General Error Display */}
+      {generalError && (
+        <div className="error-message" style={{ 
+          color: 'red', 
+          marginBottom: '15px',
+          padding: '10px',
+          backgroundColor: '#fee',
+          borderRadius: '4px',
+          border: '1px solid #fcc'
+        }}>
+          {generalError}
+        </div>
+      )}
+      
       <div className="model-version-toggle">
         <label>
           <input
@@ -335,143 +461,31 @@ const PredictionForm = ({ setResponse }) => {
       <form onSubmit={handleSubmit}>
         {modelVersion === "v1" ? (
           <div className="form-grid">
-            {/* v1 Dropdowns */}
-            <div className="form-group">
-              <label>Primary Offence:</label>
-              <select name="PRIMARY_OFFENCE" value={formDataV1.PRIMARY_OFFENCE} onChange={handleChangeV1} required>
-                <option value="">Select Primary Offence</option>
-                {primaryOffenceOptions.map(opt => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </select>
-            </div>
-            <div className="form-group">
-              <label>Bike Make:</label>
-              <select name="BIKE_MAKE" value={formDataV1.BIKE_MAKE} onChange={handleChangeV1} required>
-                <option value="">Select Bike Make</option>
-                {bikeMakeOptions.map(opt => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </select>
-            </div>
-            <div className="form-group">
-              <label>Neighbourhood 158:</label>
-              <select name="NEIGHBOURHOOD_158" value={formDataV1.NEIGHBOURHOOD_158} onChange={handleChangeV1} required>
-                <option value="">Select Neighbourhood 158</option>
-                {neighbourhood158Options.map(opt => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </select>
-            </div>
-            <div className="form-group">
-              <label>Neighbourhood 140:</label>
-              <select name="NEIGHBOURHOOD_140" value={formDataV1.NEIGHBOURHOOD_140} onChange={handleChangeV1} required>
-                <option value="">Select Neighbourhood 140</option>
-                {neighbourhood140Options.map(opt => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </select>
-            </div>
-            {/* v1 Numeric/Text Fields with placeholders */}
-            <div className="form-group">
-              <label>Bike Cost:</label>
-              <input type="number" name="BIKE_COST" placeholder="e.g., 500" value={formDataV1.BIKE_COST} onChange={handleChangeV1} required />
-            </div>
-            <div className="form-group">
-              <label>Latitude (WGS84):</label>
-              <input type="number" step="0.000001" name="LAT_WGS84" placeholder="e.g., 43.6532" value={formDataV1.LAT_WGS84} onChange={handleChangeV1} required />
-            </div>
-            <div className="form-group">
-              <label>Occurrence Day-of-Year (OCC_DOY):</label>
-              <input type="number" name="OCC_DOY" placeholder="e.g., 200" value={formDataV1.OCC_DOY} onChange={handleChangeV1} required />
-            </div>
-            <div className="form-group">
-              <label>Report Year:</label>
-              <input type="number" name="REPORT_YEAR" placeholder="e.g., 2024" value={formDataV1.REPORT_YEAR} onChange={handleChangeV1} required />
-            </div>
-            <div className="form-group">
-              <label>Report Day:</label>
-              <input type="number" name="REPORT_DAY" placeholder="e.g., 1 - 31" value={formDataV1.REPORT_DAY} onChange={handleChangeV1} required />
-            </div>
-            <div className="form-group">
-              <label>Occurrence Day:</label>
-              <input type="number" name="OCC_DAY" placeholder="e.g., 1 - 31" value={formDataV1.OCC_DAY} onChange={handleChangeV1} required />
-            </div>
+            {/* v1 Fields */}
+            {renderField('PRIMARY_OFFENCE', formDataV1.PRIMARY_OFFENCE, handleChangeV1, 'select', primaryOffenceOptions)}
+            {renderField('BIKE_MAKE', formDataV1.BIKE_MAKE, handleChangeV1, 'select', bikeMakeOptions)}
+            {renderField('NEIGHBOURHOOD_158', formDataV1.NEIGHBOURHOOD_158, handleChangeV1, 'select', neighbourhood158Options)}
+            {renderField('NEIGHBOURHOOD_140', formDataV1.NEIGHBOURHOOD_140, handleChangeV1, 'select', neighbourhood140Options)}
+            {renderField('BIKE_COST', formDataV1.BIKE_COST, handleChangeV1, 'input', [], 'e.g., 500')}
+            {renderField('LAT_WGS84', formDataV1.LAT_WGS84, handleChangeV1, 'input', [], 'e.g., 43.6532')}
+            {renderField('OCC_DOY', formDataV1.OCC_DOY, handleChangeV1, 'input', [], 'e.g., 200')}
+            {renderField('REPORT_YEAR', formDataV1.REPORT_YEAR, handleChangeV1, 'input', [], 'e.g., 2024')}
+            {renderField('REPORT_DAY', formDataV1.REPORT_DAY, handleChangeV1, 'input', [], 'e.g., 1 - 31')}
+            {renderField('OCC_DAY', formDataV1.OCC_DAY, handleChangeV1, 'input', [], 'e.g., 1 - 31')}
           </div>
         ) : (
           <div className="form-grid">
-            {/* v2 Dropdowns */}
-            <div className="form-group">
-              <label>Primary Offence:</label>
-              <select name="PRIMARY_OFFENCE" value={formDataV2.PRIMARY_OFFENCE} onChange={handleChangeV2} required>
-                <option value="">Select Primary Offence</option>
-                {primaryOffenceOptions.map(opt => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </select>
-            </div>
-            <div className="form-group">
-              <label>Division:</label>
-              <select name="DIVISION" value={formDataV2.DIVISION} onChange={handleChangeV2} required>
-                <option value="">Select Division</option>
-                {divisionOptions.map(opt => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </select>
-            </div>
-            <div className="form-group">
-              <label>Premises Type:</label>
-              <select name="PREMISES_TYPE" value={formDataV2.PREMISES_TYPE} onChange={handleChangeV2} required>
-                <option value="">Select Premises Type</option>
-                {premisesTypeOptions.map(opt => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </select>
-            </div>
-            <div className="form-group">
-              <label>Bike Type:</label>
-              <select name="BIKE_TYPE" value={formDataV2.BIKE_TYPE} onChange={handleChangeV2} required>
-                <option value="">Select Bike Type</option>
-                {bikeTypeOptions.map(opt => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </select>
-            </div>
-            <div className="form-group">
-              <label>Bike Colour:</label>
-              <select name="BIKE_COLOUR" value={formDataV2.BIKE_COLOUR} onChange={handleChangeV2} required>
-                <option value="">Select Bike Colour</option>
-                {bikeColourOptions.map(opt => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </select>
-            </div>
-            <div className="form-group">
-              <label>Neighbourhood 140:</label>
-              <select name="NEIGHBOURHOOD_140" value={formDataV2.NEIGHBOURHOOD_140} onChange={handleChangeV2} required>
-                <option value="">Select Neighbourhood 140</option>
-                {neighbourhood140Options.map(opt => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </select>
-            </div>
-            {/* v2 Numeric Fields with placeholders */}
-            <div className="form-group">
-              <label>OCC DOW:</label>
-              <input type="number" name="OCC_DOW" placeholder="e.g., 0 (Sunday) to 6 (Saturday)" value={formDataV2.OCC_DOW} onChange={handleChangeV2} required />
-            </div>
-            <div className="form-group">
-              <label>Report Year:</label>
-              <input type="number" name="REPORT_YEAR" placeholder="e.g., 2024" value={formDataV2.REPORT_YEAR} onChange={handleChangeV2} required />
-            </div>
-            <div className="form-group">
-              <label>Bike Speed:</label>
-              <input type="number" name="BIKE_SPEED" placeholder="e.g., 6" value={formDataV2.BIKE_SPEED} onChange={handleChangeV2} required />
-            </div>
-            <div className="form-group">
-              <label>Bike Cost:</label>
-              <input type="number" name="BIKE_COST" placeholder="e.g., 500" value={formDataV2.BIKE_COST} onChange={handleChangeV2} required />
-            </div>
+            {/* v2 Fields */}
+            {renderField('PRIMARY_OFFENCE', formDataV2.PRIMARY_OFFENCE, handleChangeV2, 'select', primaryOffenceOptions)}
+            {renderField('DIVISION', formDataV2.DIVISION, handleChangeV2, 'select', divisionOptions)}
+            {renderField('PREMISES_TYPE', formDataV2.PREMISES_TYPE, handleChangeV2, 'select', premisesTypeOptions)}
+            {renderField('BIKE_TYPE', formDataV2.BIKE_TYPE, handleChangeV2, 'select', bikeTypeOptions)}
+            {renderField('BIKE_COLOUR', formDataV2.BIKE_COLOUR, handleChangeV2, 'select', bikeColourOptions)}
+            {renderField('NEIGHBOURHOOD_140', formDataV2.NEIGHBOURHOOD_140, handleChangeV2, 'select', neighbourhood140Options)}
+            {renderField('OCC_DOW', formDataV2.OCC_DOW, handleChangeV2, 'input', [], 'e.g., 0 (Sunday) to 6 (Saturday)')}
+            {renderField('REPORT_YEAR', formDataV2.REPORT_YEAR, handleChangeV2, 'input', [], 'e.g., 2024')}
+            {renderField('BIKE_SPEED', formDataV2.BIKE_SPEED, handleChangeV2, 'input', [], 'e.g., 6')}
+            {renderField('BIKE_COST', formDataV2.BIKE_COST, handleChangeV2, 'input', [], 'e.g., 500')}
           </div>
         )}
         <div className="form-buttons">
